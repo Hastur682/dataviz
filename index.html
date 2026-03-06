@@ -48,6 +48,17 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','H
   width:var(--sidebar-w); flex-shrink:0; background:var(--surface);
   border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden;
 }
+
+/* ===== CONTENT + TABLE SPLIT ===== */
+#content-table-wrap { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+#main-area-outer { flex:1; overflow:hidden; display:flex; flex-direction:column; min-height:0; }
+#table-section { flex-shrink:0; border-top:2px solid var(--border); background:var(--surface); display:flex; flex-direction:column; height:320px; resize:vertical; overflow:hidden; }
+#table-section.hidden { display:none !important; }
+#table-section .ts-header { display:flex; align-items:center; gap:8px; padding:8px 14px; border-bottom:1px solid var(--border); flex-shrink:0; flex-wrap:wrap; }
+#table-section .ts-header h3 { font-size:14px; font-weight:600; }
+#table-section .ts-body { flex:1; overflow:hidden; display:flex; flex-direction:column; min-height:0; }
+#table-section .table-scroll { flex:1; overflow:auto; }
+#table-section #pagination { flex-shrink:0; padding:6px 14px; border-top:1px solid var(--border); }
 #sidebar-header { padding:14px 16px; font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border); flex-shrink:0; }
 #batch-list { flex:1; overflow-y:auto; padding:6px 0; }
 .batch-item { padding:10px 14px; cursor:pointer; transition:background .15s; border-bottom:1px solid var(--border); position:relative; }
@@ -61,7 +72,8 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','H
 .no-batch { padding:32px 16px;text-align:center;color:var(--text-muted);font-size:12px; }
 
 /* ===== MAIN SCROLL AREA ===== */
-#main-area { flex:1; overflow-y:auto; padding:16px 20px; display:flex; flex-direction:column; gap:16px; }
+#main-area-outer { flex:1; overflow:hidden; display:flex; flex-direction:column; min-height:0; }
+#main-area { flex:1; overflow-y:auto; padding:16px 20px; display:flex; flex-direction:column; gap:16px; min-height:0; }
 
 /* ===== EMPTY STATE ===== */
 #empty-state { display:flex;align-items:center;justify-content:center;flex:1;min-height:400px; }
@@ -110,9 +122,6 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','H
 /* ===== DATA TABLE ===== */
 .table-scroll {
   overflow-x:auto; overflow-y:auto;
-  height:420px; min-height:160px; max-height:80vh;
-  resize:vertical;
-  border-bottom:3px solid var(--border);
 }
 .data-table { width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap; }
 .data-table th { background:var(--bg);padding:8px 11px;text-align:left;font-weight:600; color:var(--text-muted);border-bottom:2px solid var(--border); position:sticky;top:0;z-index:1;font-size:11px;text-transform:uppercase;letter-spacing:.04em; cursor:pointer;user-select:none; }
@@ -234,7 +243,9 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','H
 /* ===== FILTERABLE CHARTS ===== */
 #overall-dist-chart, #lowrate-chart, #all-labels-chart { cursor:pointer; }
 .l2-filter-target { cursor:pointer; color:var(--primary); text-decoration:underline; text-underline-offset:2px; }
+.l3-filter-target { cursor:pointer; color:var(--primary); text-decoration:underline; text-underline-offset:1px; }
 .l2-bar-row.filter-active { background:var(--primary-light); outline:2px solid var(--primary); border-radius:5px; }
+.l3-item.filter-active { background:var(--primary-light); border-radius:4px; outline:1px solid var(--primary); }
 </style>
 </head>
 <body>
@@ -271,8 +282,11 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','H
     <div id="batch-list"><div class="no-batch">暂无历史数据</div></div>
   </aside>
 
-  <!-- Main -->
-  <div id="main-area">
+  <!-- Content + Table split -->
+  <div id="content-table-wrap">
+    <!-- Charts area (scrollable) -->
+    <div id="main-area-outer">
+      <div id="main-area">
     <div id="error-banner"></div>
 
     <!-- Empty state -->
@@ -366,31 +380,36 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','H
       </div>
     </div>
 
-    <!-- Data table -->
-    <div class="card hidden" id="table-card">
-      <div class="card-header" style="flex-wrap:wrap;gap:8px">
+    <!-- Data table — fixed bottom panel, always visible -->
+    </div><!-- /#main-area -->
+    </div><!-- /#main-area-outer -->
+
+    <div id="table-section" class="hidden">
+      <div class="ts-header">
         <h3>数据详情</h3>
         <span id="detail-filter-badge" class="filter-badge hidden"></span>
         <button id="detail-clear-btn" class="hidden">清除筛选</button>
-        <input id="table-search" type="text" placeholder="搜索..." style="margin-left:auto">
+        <input id="table-search" type="text" placeholder="搜索..." style="margin-left:auto;padding:4px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;outline:none;">
       </div>
-      <div class="table-scroll" id="table-scroll">
-        <table class="data-table" id="data-table">
-          <thead id="table-head"></thead>
-          <tbody id="table-body"></tbody>
-        </table>
+      <div class="ts-body">
+        <div class="table-scroll">
+          <table class="data-table" id="data-table">
+            <thead id="table-head"></thead>
+            <tbody id="table-body"></tbody>
+          </table>
+        </div>
+        <div id="pagination"></div>
       </div>
-      <div id="pagination"></div>
     </div>
-  </div>
-</div>
+  </div><!-- /#content-table-wrap -->
+</div><!-- /#app-wrap -->
 
 <script>
 'use strict';
 // ==================== CONSTANTS ====================
 const SCORE_COLS = ['清晰度','内容质量','美学质量','动态基础质量','动态强度'];
 const SCORE_BINS = [1,1.5,2,2.5,3,3.5,4,4.5,5];
-const STORAGE_KEY = 'viz_batches_v5';
+const STORAGE_KEY = 'viz_batches_v6';
 const PAGE_SIZE = 100;
 
 // ==================== NEW FORMAT COLUMN MAPPING ====================
@@ -402,31 +421,49 @@ const NEW_FORMAT_SCORE_MAP = {
   'output.视频1-动态质量-动态强度':     '动态强度',
 };
 
+// NEW_FORMAT_SUBDIM_MAP: maps each dim to an ordered list of tiers.
+// Each tier has: score (L2 label as it appears in main col), srcCol (sub-score column, may be null),
+// and l3 (predefined L3 label list — shown even if count=0 in actual data).
 const NEW_FORMAT_SUBDIM_MAP = {
   '清晰度': [
-    { score:'output.1分-极低清视频',   other:'output.clarity1_other' },
-    { score:'output.2分-低清视频',     other:'output.clarity2_other' },
-    { score:'output.2.5分-中低清视频', other:'output.clarity2p5_other' },
+    { score:'极低清视频',  srcCol:'output.1分-极低清视频',   l3:['严重压缩失真','极度噪点','严重模糊'] },
+    { score:'低清视频',    srcCol:'output.2分-低清视频',     l3:['低分辨率模糊','明显噪点','明显块效应'] },
+    { score:'中低清视频',  srcCol:'output.2.5分-中低清视频', l3:['中度/轻度模糊、中度/轻度块效应、中度噪点','轻微镜头脏污、划痕、老旧感','画面中存在模糊/马赛克/遮挡的局部区域'] },
+    { score:'正常清晰度',  srcCol:null,                      l3:[] },
+    { score:'中高清视频',  srcCol:null,                      l3:[] },
+    { score:'高清视频',    srcCol:null,                      l3:[] },
   ],
   '内容质量': [
-    { score:'output.1分-严重的基础质量问题', other:'output.content1_other' },
-    { score:'output.2分-中度基础质量问题',   other:'output.content2_other' },
-    { score:'output.2.5分-画面内容存在瑕疵', other:'output.content2p5_other' },
+    { score:'严重的基础质量问题',             srcCol:'output.1分-严重的基础质量问题', l3:['漏检（前景字符未框全）','AIGC一票否决','画面格式异常：竖屏、黑边等','拍摄形式问题：二次拍摄、截图等','误检（误将后景识别成前景）'] },
+    { score:'中度基础质量问题',               srcCol:'output.2分-中度基础质量问题',   l3:['低质量生活场景（凌乱、过暗等）','画面格式存在轻微问题','内容重复或无实质信息'] },
+    { score:'画面内容存在瑕疵',               srcCol:'output.2.5分-画面内容存在瑕疵', l3:['低质量生活场景（凌乱、过暗等）','内容稍显单调','背景略显凌乱'] },
+    { score:'画面内容基本合理，内容质量一般', srcCol:null,                            l3:[] },
+    { score:'中高内容质量',                   srcCol:null,                            l3:[] },
+    { score:'内容质量较高',                   srcCol:null,                            l3:[] },
   ],
   '美学质量': [
-    { score:'output.1分-画面无美感',     other:'output.aesthetic1_other' },
-    { score:'output.2分-画面美感较差',   other:'output.aesthetic2_other' },
-    { score:'output.2.5分-中低画面美感', other:'output.aesthetic2p5_other' },
+    { score:'画面无美感',     srcCol:'output.1分-画面无美感',     l3:['严重光斑','老旧审丑动漫','严重色偏'] },
+    { score:'画面美感较差',   srcCol:'output.2分-画面美感较差',   l3:['色彩、曝光都处于及格线边缘，且两者均偏差','严重光斑','主体不完整'] },
+    { score:'中低画面美感',   srcCol:'output.2.5分-中低画面美感', l3:['色彩、曝光都处于及格线边缘，且两者均偏差','轻微光斑','老旧审丑动漫','主体不完整'] },
+    { score:'画面美感正常',   srcCol:null,                        l3:[] },
+    { score:'中高画面美感',   srcCol:null,                        l3:[] },
+    { score:'画面美感较好，优质创作', srcCol:null,                l3:[] },
   ],
   '动态基础质量': [
-    { score:'output.1分-基础质量不合格',   other:'output.movement_quality1_other' },
-    { score:'output.2分-中低动态基础质量', other:'output.movement_quality2_other' },
-    { score:'output.2.5分-存在运动瑕疵',   other:'output.movement_quality2p5_other' },
+    { score:'基础质量不合格',   srcCol:'output.1分-基础质量不合格',   l3:['跳变','转场/渐变切镜/PPT轮播','严重镜头抖动','长时间静止或几乎无动态'] },
+    { score:'中低动态基础质量', srcCol:'output.2分-中低动态基础质量', l3:['轻微明暗变化','轻微晃动运镜','轻微镜头抖动'] },
+    { score:'存在运动瑕疵',     srcCol:'output.2.5分-存在运动瑕疵',   l3:['轻微明暗变化','轻微晃动运镜','跳变','转场/渐变切镜/PPT轮播','轻微镜头抖动'] },
+    { score:'正常动态',         srcCol:null,                          l3:[] },
+    { score:'正常动态增强',     srcCol:null,                          l3:[] },
+    { score:'复杂动态',         srcCol:null,                          l3:[] },
   ],
   '动态强度': [
-    { score:'output.1分-无动态',    other:'output.movement_range1_other' },
-    { score:'output.2分-低动态',    other:'output.movement_range2_other' },
-    { score:'output.2.5分-中低动态',other:'output.movement_range2p5_other' },
+    { score:'无动态',    srcCol:'output.1分-无动态',    l3:['无运镜+小幅度动作','静态画面'] },
+    { score:'低动态',    srcCol:'output.2分-低动态',    l3:['动作幅度不足','运镜动力不足'] },
+    { score:'中低动态',  srcCol:'output.2.5分-中低动态',l3:['动作幅度不足','运镜动力不足','无运镜+小幅度动作','动态略显呆板'] },
+    { score:'正常动态',  srcCol:null,                   l3:[] },
+    { score:'正常动态增强', srcCol:null,                l3:[] },
+    { score:'高动态',    srcCol:null,                   l3:[] },
   ],
 };
 
@@ -466,31 +503,27 @@ function normalizeRows(rawRows) {
       row[dstCol] = extractScore(val != null ? val : '');
     });
 
-    Object.entries(NEW_FORMAT_SUBDIM_MAP).forEach(([dim, pairs]) => {
+    Object.entries(NEW_FORMAT_SUBDIM_MAP).forEach(([dim, tiers]) => {
       const mainSrcCol = Object.entries(NEW_FORMAT_SCORE_MAP).find(([,d]) => d === dim)?.[0];
       const mainRaw = mainSrcCol ? String(raw[mainSrcCol] || '').trim() : '';
       const mainLabel = mainRaw.replace(/^\d+(?:\.\d+)?分-/, '').trim();
 
-      let l2Val = mainLabel || '';
+      const l2Val = mainLabel || '';
       let l3Vals = [];
 
-      for (const { score, other } of pairs) {
-        const scoreVal = String(raw[score] || '').trim();
-        if (scoreVal) {
-          if (!l2Val) l2Val = score.replace(/^output\.\d+(?:\.\d+)?分-/, '');
-          // L3: parse "code:label;code:label" segments from the score column value
-          scoreVal.split(';').forEach(seg => {
-            const label = seg.replace(/^[^:]+:/, '').trim();
-            if (label) l3Vals.push(label);
-          });
-          // Also check the _other column as fallback
-          const otherVal = String(raw[other] || '').trim();
-          if (otherVal && !l3Vals.includes(otherVal)) l3Vals.push(otherVal);
-          break;
-        }
-      }
-
       if (l2Val) {
+        // Find the tier definition matching this row's L2 label
+        const tierDef = tiers.find(t => t.score === l2Val);
+        if (tierDef && tierDef.srcCol) {
+          // Parse L3 from the sub-score column value ("code:label;code:label" format)
+          const srcVal = String(raw[tierDef.srcCol] || '').trim();
+          if (srcVal) {
+            srcVal.split(';').forEach(seg => {
+              const label = seg.replace(/^[^:]+:/, '').trim();
+              if (label) l3Vals.push(label);
+            });
+          }
+        }
         row[dim + '_level2'] = l2Val;
         if (l3Vals.length > 0) row[dim + '_level3'] = l3Vals.join('；');
       }
@@ -535,6 +568,10 @@ function applyFilter(rows){
   if(f.type==='lowrate') return rows.filter(r=>{ const v=parseFloat(r[f.dim]); return !isNaN(v)&&v<=2; });
   if(f.type==='label')   return rows.filter(r=>{ const v=parseFloat(r[f.dim]); return !isNaN(v)&&Math.abs(v-f.score)<0.01; });
   if(f.type==='subdim')  return rows.filter(r=>String(r[f.dim+'_level2']||'').trim()===f.l2);
+  if(f.type==='l3') return rows.filter(r=>{
+    const l3Raw = String(r[f.dim+'_level3']||'').trim();
+    return String(r[f.dim+'_level2']||'').trim()===f.l2 && l3Raw.split('；').map(s=>s.trim()).includes(f.l3);
+  });
   return rows;
 }
 
@@ -544,6 +581,7 @@ function describeFilter(f){
   if(f.type==='lowrate') return `${f.dim} 低分（≤ 2）`;
   if(f.type==='label')   return `${f.dim} = ${f.score}分`;
   if(f.type==='subdim')  return `${f.dim} · ${f.l2}`;
+  if(f.type==='l3')      return `${f.dim} · ${f.l2} · ${f.l3}`;
   return '已筛选';
 }
 
@@ -704,7 +742,7 @@ function renderMainContent(){
 
   if(!currentBatchId || batches.length===0){
     show('empty-state');
-    ['trend-section','stat-cards','row-dist-lowrate','row-labels-subdim','table-card'].forEach(hide);
+    ['trend-section','stat-cards','row-dist-lowrate','row-labels-subdim','table-section'].forEach(hide);
     document.getElementById('current-batch-name').classList.add('hidden');
     document.getElementById('export-btn-header').classList.add('hidden');
     return;
@@ -717,7 +755,7 @@ function renderMainContent(){
   document.getElementById('current-batch-name').textContent = batch.name;
   document.getElementById('current-batch-name').classList.remove('hidden');
   document.getElementById('export-btn-header').classList.remove('hidden');
-  ['stat-cards','row-dist-lowrate','row-labels-subdim','table-card'].forEach(show);
+  ['stat-cards','row-dist-lowrate','row-labels-subdim','table-section'].forEach(show);
 
   renderStatCards(batch.rows);
   renderTrendChart();   // always show
@@ -943,20 +981,38 @@ function getSubDimData(rows, label){
   const hasL2 = rows.some(r => r[l2Col] != null && String(r[l2Col]).trim() !== '');
   if(!hasL2) return null;
   const result = {};
+
+  // Seed predefined L2/L3 structure from the map (so all tiers show even with 0 count)
+  const tierDefs = NEW_FORMAT_SUBDIM_MAP[label] || [];
+  tierDefs.forEach(tier => {
+    if(!result[tier.score]) result[tier.score] = { count:0, l3:{} };
+    (tier.l3 || []).forEach(l3label => {
+      if(!(l3label in result[tier.score].l3)) result[tier.score].l3[l3label] = 0;
+    });
+  });
+
   rows.forEach(r => {
     const l2 = String(r[l2Col]||'').trim(); if(!l2) return;
     if(!result[l2]) result[l2]={ count:0, l3:{} };
     result[l2].count++;
     const l3Raw = String(r[l3Col]||'').trim();
     if(l3Raw){
-      // l3 may be multiple labels joined by ；
       l3Raw.split('；').forEach(seg => {
         const seg2 = seg.trim();
         if(seg2) result[l2].l3[seg2] = (result[l2].l3[seg2]||0)+1;
       });
     }
   });
-  const sorted = Object.entries(result).sort((a,b)=>b[1].count-a[1].count);
+
+  // Sort: tiers in predefined order first, then by count desc
+  const tierOrder = tierDefs.map(t => t.score);
+  const sorted = Object.entries(result).sort((a,b) => {
+    const ia = tierOrder.indexOf(a[0]), ib = tierOrder.indexOf(b[0]);
+    if(ia !== -1 && ib !== -1) return ia - ib;
+    if(ia !== -1) return -1;
+    if(ib !== -1) return 1;
+    return b[1].count - a[1].count;
+  });
   const out = {};
   sorted.forEach(([k,v])=>{ v.pct=(v.count/rows.length*100).toFixed(1); out[k]=v; });
   return out;
@@ -1012,6 +1068,7 @@ function renderAllSubdimPanel(rows, activeDim){
     const l3Entries = Object.entries(info.l3).sort((a,b)=>b[1]-a[1]);
     const hasL3 = l3Entries.length>0;
 
+    // Show expand icon if there are any l3 entries (including 0-count predefined)
     const expandIcon = hasL3
       ? `<span class="l2-expand-icon">▶</span>`
       : `<span class="l2-expand-icon" style="opacity:0">▶</span>`;
@@ -1019,15 +1076,18 @@ function renderAllSubdimPanel(rows, activeDim){
     const l3Html = hasL3 ? `<div class="l3-list">
       ${l3Entries.map(([l3,cnt])=>{
         const l3W = info.count>0 ? (cnt/info.count*100).toFixed(1) : 0;
-        return `<div class="l3-item">
-          <span class="l3-name" title="${esc(l3)}">${esc(l3)}</span>
+        const isL3Active = activeFilter&&activeFilter.type==='l3'&&activeFilter.dim===activeDim&&activeFilter.l2===l2&&activeFilter.l3===l3;
+        const zeroStyle = cnt===0 ? 'opacity:0.45' : '';
+        return `<div class="l3-item ${isL3Active?'filter-active':''}" style="${zeroStyle}" data-l3="${esc(l3)}">
+          <span class="l3-name l3-filter-target" title="${esc(l3)}">${esc(l3)}</span>
           <div class="l3-bar-bg"><div class="l3-bar-fill" style="width:${l3W}%"></div></div>
           <span class="l3-stat">${cnt.toLocaleString('zh-CN')} (${(cnt/rows.length*100).toFixed(1)}%)</span>
         </div>`;
       }).join('')}
     </div>` : '';
 
-    const isFilterActive = activeFilter&&activeFilter.type==='subdim'&&activeFilter.l2===l2;
+    const isFilterActive = (activeFilter&&activeFilter.type==='subdim'&&activeFilter.l2===l2) ||
+                           (activeFilter&&activeFilter.type==='l3'&&activeFilter.l2===l2&&activeFilter.dim===activeDim);
     return `<div class="l2-item">
       <div class="l2-bar-row ${isFilterActive?'filter-active':''}" ${hasL3?'data-has-l3="1"':''} data-l2="${esc(l2)}">
         ${expandIcon}
@@ -1047,12 +1107,12 @@ function renderAllSubdimPanel(rows, activeDim){
     ${entries.length===0 ? '<div class="subdim-empty">暂无子维度数据</div>' : itemsHtml}
   `;
 
-  // L3 expand: click the row (but not on the filter label)
-  container.querySelectorAll('.l2-bar-row[data-has-l3]').forEach(row=>{
-    row.addEventListener('click', e=>{
+  // L3 expand: click the row (but not on filter targets)
+  container.querySelectorAll('.l2-bar-row[data-has-l3]').forEach(rowEl=>{
+    rowEl.addEventListener('click', e=>{
       if(e.target.classList.contains('l2-filter-target')) return;
-      const icon = row.querySelector('.l2-expand-icon');
-      const l3List = row.closest('.l2-item').querySelector('.l3-list');
+      const icon = rowEl.querySelector('.l2-expand-icon');
+      const l3List = rowEl.closest('.l2-item').querySelector('.l3-list');
       if(!l3List) return;
       l3List.classList.toggle('open');
       icon.classList.toggle('open');
@@ -1067,7 +1127,19 @@ function renderAllSubdimPanel(rows, activeDim){
       activeFilter=(activeFilter&&activeFilter.type==='subdim'&&activeFilter.l2===l2Val&&activeFilter.dim===activeDim)
         ? null : {type:'subdim', dim:activeDim, l2:l2Val};
       updateDetailPanel();
-      // Re-render panel to update highlight
+      renderAllSubdimPanel(rows, activeDim);
+    });
+  });
+
+  // Filter: click L3 label text
+  container.querySelectorAll('.l3-filter-target').forEach(label=>{
+    label.addEventListener('click', e=>{
+      e.stopPropagation();
+      const l3Val = label.closest('.l3-item').dataset.l3;
+      const l2Val = label.closest('.l2-item').querySelector('.l2-bar-row').dataset.l2;
+      activeFilter=(activeFilter&&activeFilter.type==='l3'&&activeFilter.l3===l3Val&&activeFilter.l2===l2Val&&activeFilter.dim===activeDim)
+        ? null : {type:'l3', dim:activeDim, l2:l2Val, l3:l3Val};
+      updateDetailPanel();
       renderAllSubdimPanel(rows, activeDim);
     });
   });
