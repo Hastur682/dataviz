@@ -219,6 +219,22 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','H
 .l3-bar-fill { height:100%; background:#76b7b2; border-radius:2px; }
 .l3-stat { font-size:10px; color:var(--text-muted); min-width:70px; text-align:right; flex-shrink:0; }
 .subdim-empty { text-align:center; padding:16px; color:var(--text-muted); font-size:12px; }
+
+/* ===== SUBDIM DIM BUTTONS ===== */
+.subdim-dim-btn-row { display:flex; flex-wrap:wrap; gap:6px; }
+.subdim-dim-btn { padding:4px 10px; border-radius:14px; border:1.5px solid var(--border); background:var(--bg); font-size:12px; font-weight:500; cursor:pointer; color:var(--text-muted); transition:all .15s; white-space:nowrap; }
+.subdim-dim-btn:hover { border-color:var(--primary); color:var(--primary); background:var(--primary-light); }
+.subdim-dim-btn.active { background:var(--primary); border-color:var(--primary); color:#fff; }
+
+/* ===== DETAIL FILTER BADGE ===== */
+.filter-badge { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--primary); background:var(--primary-light); padding:3px 10px; border-radius:10px; font-weight:500; border:1px solid rgba(78,121,167,0.2); }
+#detail-clear-btn { font-size:12px; padding:3px 10px; border-radius:6px; border:1px solid var(--border); background:var(--bg); cursor:pointer; color:var(--text-muted); transition:all .15s; }
+#detail-clear-btn:hover { border-color:var(--danger); color:var(--danger); }
+
+/* ===== FILTERABLE CHARTS ===== */
+#overall-dist-chart, #lowrate-chart, #all-labels-chart { cursor:pointer; }
+.l2-filter-target { cursor:pointer; color:var(--primary); text-decoration:underline; text-underline-offset:2px; }
+.l2-bar-row.filter-active { background:var(--primary-light); outline:2px solid var(--primary); border-radius:5px; }
 </style>
 </head>
 <body>
@@ -339,9 +355,9 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','H
       </div>
       <!-- Sub-dim tree panel -->
       <div class="card" id="subdim-card">
-        <div class="card-header">
+        <div class="card-header" style="flex-wrap:wrap;gap:8px">
           <h3>子维度详情</h3>
-          <span style="font-size:12px;color:var(--text-muted)">点击左侧维度名展开</span>
+          <div id="subdim-dim-btns" class="subdim-dim-btn-row"></div>
         </div>
         <div class="card-body" style="padding:10px 12px; overflow-y:auto; max-height:380px;">
           <div id="all-subdim-panel"></div>
@@ -351,9 +367,11 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','H
 
     <!-- Data table -->
     <div class="card hidden" id="table-card">
-      <div class="card-header">
-        <h3>数据明细</h3>
-        <input id="table-search" type="text" placeholder="搜索...">
+      <div class="card-header" style="flex-wrap:wrap;gap:8px">
+        <h3>数据详情</h3>
+        <span id="detail-filter-badge" class="filter-badge hidden"></span>
+        <button id="detail-clear-btn" class="hidden">清除筛选</button>
+        <input id="table-search" type="text" placeholder="搜索..." style="margin-left:auto">
       </div>
       <div class="table-scroll" id="table-scroll">
         <table class="data-table" id="data-table">
@@ -478,6 +496,8 @@ let tableFilteredRows = [];
 let tableSearchText = '';
 let charts = {};
 let activeDimForSubdim = null;
+let activeFilter = null;    // {type:'overall'|'lowrate'|'label'|'subdim', ...}
+let tableBaseRows = null;   // base rows for current filter context
 
 // ==================== UTILS ====================
 function esc(s){ if(s==null)return''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
@@ -491,6 +511,32 @@ function fmtScore(v){ return Number(v).toFixed(2); }
 
 const SCORE_BIN_COLORS = SCORE_BINS.map(b => b<=2?'#e15759': b<=3?'#f28e2b': b<=4?'#edc948':'#59a14f');
 const DIM_COLORS = ['#4e79a7','#f28e2b','#e15759','#76b7b2','#59a14f'];
+
+// ==================== FILTER HELPERS ====================
+function applyFilter(rows){
+  if(!activeFilter) return rows;
+  const f = activeFilter;
+  if(f.type==='overall') return rows.filter(r=>Math.abs(r._overallScore-f.score)<0.01);
+  if(f.type==='lowrate') return rows.filter(r=>{ const v=parseFloat(r[f.dim]); return !isNaN(v)&&v<=2; });
+  if(f.type==='label')   return rows.filter(r=>{ const v=parseFloat(r[f.dim]); return !isNaN(v)&&Math.abs(v-f.score)<0.01; });
+  if(f.type==='subdim')  return rows.filter(r=>String(r[f.dim+'_level2']||'').trim()===f.l2);
+  return rows;
+}
+
+function describeFilter(f){
+  if(!f) return '';
+  if(f.type==='overall') return `整体分 = ${f.score}分`;
+  if(f.type==='lowrate') return `${f.dim} 低分（≤ 2）`;
+  if(f.type==='label')   return `${f.dim} = ${f.score}分`;
+  if(f.type==='subdim')  return `${f.dim} · ${f.l2}`;
+  return '已筛选';
+}
+
+function updateDetailPanel(){
+  const batch = batches.find(b=>b.id===currentBatchId);
+  if(!batch) return;
+  renderDetailTable(applyFilter(tableBaseRows||batch.rows));
+}
 
 // ==================== OVERALL SCORE ====================
 function calcOverallScore(row){
@@ -663,10 +709,13 @@ function renderMainContent(){
   renderLowRateChart(batch.rows);
   renderAllLabelsChart(batch.rows);
   activeDimForSubdim = null;
+  activeFilter = null;
+  tableBaseRows = batch.rows;
   renderAllSubdimPanel(batch.rows, null);
+  renderSubdimButtons(batch.rows);
   tableCurrentPage=1; tableSearchText=''; tableSortCol='_overallScore'; tableSortDir='desc';
   document.getElementById('table-search').value='';
-  renderTable(batch.rows);
+  renderDetailTable(batch.rows);
 }
 
 // ==================== STAT CARDS ====================
@@ -716,30 +765,46 @@ function renderTrendChart(){
 // ==================== OVERALL DIST CHART ====================
 function renderOverallDistChart(rows){
   destroyChart('overallDist');
-  const bins = {};
-  SCORE_BINS.forEach(b=>{ bins[b]=0; });
-  rows.forEach(r=>{ const s=r._overallScore; if(!isNaN(s)){ const k=SCORE_BINS.find(b=>Math.abs(b-s)<0.01); if(k!==undefined) bins[k]++; } });
-  const values = SCORE_BINS.map(b=>bins[b]||0);
-  const total = rows.length;
+  const binCounts = {};
+  SCORE_BINS.forEach(b=>{ binCounts[b]=0; });
+  rows.forEach(r=>{ const s=r._overallScore; if(!isNaN(s)){ const k=SCORE_BINS.find(b=>Math.abs(b-s)<0.01); if(k!==undefined) binCounts[k]++; } });
+  // Only show non-zero bins
+  const nonZero = SCORE_BINS.filter(b=>binCounts[b]>0);
+  const values  = nonZero.map(b=>binCounts[b]);
+  const colors  = nonZero.map(b=>b<=2?'#e15759': b<=3?'#f28e2b': b<=4?'#edc948':'#59a14f');
+  const total   = rows.filter(r=>!isNaN(r._overallScore)).length;
   const ctx = document.getElementById('overall-dist-chart').getContext('2d');
   charts['overallDist'] = new Chart(ctx,{
-    type:'bar',
-    data:{ labels:SCORE_BINS.map(String), datasets:[{ data:values, backgroundColor:SCORE_BIN_COLORS, borderWidth:0 }] },
+    type:'doughnut',
+    data:{ labels:nonZero.map(b=>b+'分'), datasets:[{ data:values, backgroundColor:colors, borderWidth:2, borderColor:'#fff' }] },
     options:{
       responsive:true, maintainAspectRatio:false,
+      cutout:'55%',
       plugins:{
-        legend:{ display:false },
-        datalabels: false,
-        tooltip:{ callbacks:{ label:c=>` ${c.raw.toLocaleString('zh-CN')} 条 (${(c.raw/total*100).toFixed(1)}%)` }}
+        legend:{ position:'right', labels:{ font:{size:11}, padding:10, boxWidth:12 } },
+        tooltip:{ callbacks:{ label:c=>` ${c.label}: ${c.raw.toLocaleString('zh-CN')} 条 (${total>0?(c.raw/total*100).toFixed(1):0}%)` }}
       },
-      scales:{
-        x:{ title:{ display:true, text:'整体分', font:{size:11} }, ticks:{ font:{size:12}, maxRotation:0 } },
-        y:{ beginAtZero:true, ticks:{ font:{size:11} },
-          afterDataLimits(scale){ scale.max = Math.ceil(scale.max * 1.12); }
+      onClick(evt, elements){
+        if(!elements.length){
+          activeFilter=null;
+        } else {
+          const scoreVal=nonZero[elements[0].index];
+          activeFilter=(activeFilter&&activeFilter.type==='overall'&&Math.abs(activeFilter.score-scoreVal)<0.01) ? null : {type:'overall',score:scoreVal};
         }
+        updateDetailPanel();
+        highlightPieSegment(nonZero);
       }
     }
   });
+}
+
+function highlightPieSegment(nonZero){
+  const chart=charts['overallDist']; if(!chart) return;
+  const ds=chart.data.datasets[0];
+  const bins=nonZero||chart.data.labels.map(l=>parseFloat(l));
+  ds.borderWidth=bins.map(b=>(activeFilter&&activeFilter.type==='overall'&&Math.abs(activeFilter.score-b)<0.01)?4:2);
+  ds.borderColor=bins.map(b=>(activeFilter&&activeFilter.type==='overall'&&Math.abs(activeFilter.score-b)<0.01)?'#2d3748':'#fff');
+  chart.update();
 }
 
 // ==================== LOW RATE CHART ====================
@@ -767,9 +832,27 @@ function renderLowRateChart(rows){
           afterDataLimits(scale){ scale.max = Math.min(100, Math.ceil((scale.max||10)*1.15)); }
         },
         y:{ ticks:{ font:{size:13}, padding:4 } }
+      },
+      onHover(evt, elements){ evt.native.target.style.cursor=elements.length?'pointer':'default'; },
+      onClick(evt, elements){
+        if(!elements.length){ activeFilter=null; }
+        else {
+          const dim=SCORE_COLS[elements[0].index];
+          activeFilter=(activeFilter&&activeFilter.type==='lowrate'&&activeFilter.dim===dim) ? null : {type:'lowrate',dim};
+        }
+        updateDetailPanel();
+        highlightLowRateBar();
       }
     }
   });
+}
+
+function highlightLowRateBar(){
+  const chart=charts['lowrate']; if(!chart) return;
+  const ds=chart.data.datasets[0];
+  ds.borderWidth=SCORE_COLS.map(dim=>(activeFilter&&activeFilter.type==='lowrate'&&activeFilter.dim===dim)?3:0);
+  ds.borderColor=SCORE_COLS.map(dim=>(activeFilter&&activeFilter.type==='lowrate'&&activeFilter.dim===dim)?'#2d3748':'transparent');
+  chart.update();
 }
 
 // ==================== ALL LABELS GROUPED BAR CHART ====================
@@ -814,12 +897,18 @@ function renderAllLabelsChart(rows){
       onClick(evt, elements){
         if(!elements.length) return;
         const dimIdx = elements[0].datasetIndex;
+        const binIdx = elements[0].index;
         const dim = SCORE_COLS[dimIdx];
+        const score = SCORE_BINS[binIdx];
         const batch = batches.find(b=>b.id===currentBatchId);
         if(!batch) return;
-        // Toggle: clicking same dim again collapses
+        // Toggle subdim panel
         activeDimForSubdim = (activeDimForSubdim===dim) ? null : dim;
         renderAllSubdimPanel(batch.rows, activeDimForSubdim);
+        renderSubdimButtons(batch.rows);
+        // Filter logic (toggle same bin clears)
+        activeFilter=(activeFilter&&activeFilter.type==='label'&&activeFilter.dim===dim&&Math.abs(activeFilter.score-score)<0.01) ? null : {type:'label',dim,score};
+        updateDetailPanel();
       }
     }
   });
@@ -845,13 +934,35 @@ function getSubDimData(rows, label){
   return out;
 }
 
+// ==================== SUBDIM DIMENSION BUTTONS ====================
+function renderSubdimButtons(rows){
+  const container = document.getElementById('subdim-dim-btns');
+  if(!container) return;
+  const availDims = SCORE_COLS.filter(dim=>rows.some(r=>String(r[dim+'_level2']||'').trim()!==''));
+  if(availDims.length===0){
+    container.innerHTML='<span style="font-size:12px;color:var(--text-muted)">暂无子维度数据</span>';
+    return;
+  }
+  container.innerHTML = availDims.map(dim=>`
+    <button class="subdim-dim-btn ${activeDimForSubdim===dim?'active':''}" data-dim="${esc(dim)}">${esc(dim)}</button>
+  `).join('');
+  container.querySelectorAll('.subdim-dim-btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const dim=btn.dataset.dim;
+      activeDimForSubdim=(activeDimForSubdim===dim)?null:dim;
+      const batch=batches.find(b=>b.id===currentBatchId);
+      if(batch){ renderSubdimButtons(batch.rows); renderAllSubdimPanel(batch.rows, activeDimForSubdim); }
+    });
+  });
+}
+
 // ==================== ALL SUBDIM PANEL ====================
 function renderAllSubdimPanel(rows, activeDim){
   const container = document.getElementById('all-subdim-panel');
   container.innerHTML = '';
 
   if(!activeDim){
-    container.innerHTML = '<div class="subdim-empty" style="padding:40px 16px">点击上方图表中的某个维度色块<br>查看该维度的子维度分布</div>';
+    container.innerHTML = '<div class="subdim-empty" style="padding:40px 16px">点击上方按钮或图表中的维度色块<br>查看该维度的子维度分布</div>';
     return;
   }
 
@@ -884,10 +995,11 @@ function renderAllSubdimPanel(rows, activeDim){
       }).join('')}
     </div>` : '';
 
+    const isFilterActive = activeFilter&&activeFilter.type==='subdim'&&activeFilter.l2===l2;
     return `<div class="l2-item">
-      <div class="l2-bar-row" ${hasL3?'data-has-l3="1"':''}>
+      <div class="l2-bar-row ${isFilterActive?'filter-active':''}" ${hasL3?'data-has-l3="1"':''} data-l2="${esc(l2)}">
         ${expandIcon}
-        <span class="l2-name" title="${esc(l2)}">${esc(l2)}</span>
+        <span class="l2-name l2-filter-target" title="${esc(l2)}">${esc(l2)}</span>
         <div class="l2-bar-bg"><div class="l2-bar-fill" style="width:${barW}%"></div></div>
         <span class="l2-stat">${info.count.toLocaleString('zh-CN')} (${info.pct}%)</span>
       </div>
@@ -898,13 +1010,15 @@ function renderAllSubdimPanel(rows, activeDim){
   const dimColor = DIM_COLORS[SCORE_COLS.indexOf(activeDim)] || '#4e79a7';
   container.innerHTML = `
     <div style="font-size:13px;font-weight:600;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid ${dimColor};color:${dimColor}">
-      ${esc(activeDim)} · 子维度分布
+      ${esc(activeDim)} · 子维度分布 <span style="font-size:11px;color:var(--text-muted);font-weight:400">（点击标签名筛选数据）</span>
     </div>
     ${entries.length===0 ? '<div class="subdim-empty">暂无子维度数据</div>' : itemsHtml}
   `;
 
+  // L3 expand: click the row (but not on the filter label)
   container.querySelectorAll('.l2-bar-row[data-has-l3]').forEach(row=>{
-    row.addEventListener('click', ()=>{
+    row.addEventListener('click', e=>{
+      if(e.target.classList.contains('l2-filter-target')) return;
       const icon = row.querySelector('.l2-expand-icon');
       const l3List = row.closest('.l2-item').querySelector('.l3-list');
       if(!l3List) return;
@@ -912,9 +1026,37 @@ function renderAllSubdimPanel(rows, activeDim){
       icon.classList.toggle('open');
     });
   });
+
+  // Filter: click L2 label text
+  container.querySelectorAll('.l2-filter-target').forEach(label=>{
+    label.addEventListener('click', e=>{
+      e.stopPropagation();
+      const l2Val = label.closest('.l2-bar-row').dataset.l2;
+      activeFilter=(activeFilter&&activeFilter.type==='subdim'&&activeFilter.l2===l2Val&&activeFilter.dim===activeDim)
+        ? null : {type:'subdim', dim:activeDim, l2:l2Val};
+      updateDetailPanel();
+      // Re-render panel to update highlight
+      renderAllSubdimPanel(rows, activeDim);
+    });
+  });
 }
 
 // ==================== DATA TABLE ====================
+function renderDetailTable(filteredRows){
+  const badge = document.getElementById('detail-filter-badge');
+  const clearBtn = document.getElementById('detail-clear-btn');
+  if(activeFilter){
+    badge.textContent = describeFilter(activeFilter) + ` · ${filteredRows.length.toLocaleString('zh-CN')} 条`;
+    badge.classList.remove('hidden');
+    clearBtn.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+    clearBtn.classList.add('hidden');
+  }
+  tableCurrentPage = 1;
+  renderTable(filteredRows);
+}
+
 function renderTable(allRows){
   const search = tableSearchText.toLowerCase();
   let filtered = search
@@ -963,7 +1105,7 @@ function renderTable(allRows){
     th.addEventListener('click',()=>{
       if(tableSortCol===th.dataset.col){ tableSortDir=tableSortDir==='asc'?'desc':'asc'; }
       else { tableSortCol=th.dataset.col; tableSortDir='desc'; }
-      tableCurrentPage=1; renderTable(batch.rows);
+      tableCurrentPage=1; renderTable(tableBaseRows||batch.rows);
     });
   });
 
@@ -1026,7 +1168,7 @@ function renderPagination(total, totalPages, allRows){
 document.getElementById('table-search').addEventListener('input', e=>{
   tableSearchText=e.target.value; tableCurrentPage=1;
   const batch=batches.find(b=>b.id===currentBatchId);
-  if(batch) renderTable(batch.rows);
+  if(batch) renderTable(tableBaseRows||batch.rows);
 });
 
 // ==================== UPLOAD INIT ====================
@@ -1041,6 +1183,17 @@ function initUpload(){
   }
   document.getElementById('upload-btn-header').addEventListener('click', triggerUpload);
   document.getElementById('export-btn-header').addEventListener('click', exportShareFile);
+  document.getElementById('detail-clear-btn').addEventListener('click', ()=>{
+    activeFilter=null;
+    const batch=batches.find(b=>b.id===currentBatchId);
+    if(batch){
+      renderDetailTable(tableBaseRows||batch.rows);
+      highlightPieSegment([]);
+      highlightLowRateBar();
+      // Re-render subdim panel to remove highlight
+      if(activeDimForSubdim) renderAllSubdimPanel(batch.rows, activeDimForSubdim);
+    }
+  });
   document.addEventListener('dragover', e=>e.preventDefault());
   document.addEventListener('drop', e=>{
     e.preventDefault();
