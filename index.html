@@ -3,602 +3,653 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>数据质量可视化平台</title>
-<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<title>数据质量可视化平台 v7</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --primary: #4e79a7; --primary-light: #eaf1f9; --primary-dark: #3a6080;
-  --success: #59a14f; --warning: #f28e2b; --danger: #e15759;
-  --bg: #f0f4f8; --surface: #fff; --border: #e2e8f0;
-  --text: #2d3748; --text-muted: #718096;
-  --radius: 10px; --shadow: 0 2px 8px rgba(0,0,0,0.08);
-  --sidebar-w: 210px;
+  --primary: #1677ff;
+  --primary-hover: #4096ff;
+  --primary-active: #0958d9;
+  --success: #52c41a;
+  --warning: #faad14;
+  --error: #ff4d4f;
+  --bg: #f5f7fa;
+  --card-bg: #ffffff;
+  --border: #f0f0f0;
+  --text: #1f1f1f;
+  --text-secondary: #8c8c8c;
+  --text-tertiary: #bfbfbf;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.03), 0 4px 12px rgba(0,0,0,0.06);
+  --radius: 8px;
+  --radius-sm: 6px;
+  --sidebar-w: 240px;
 }
-body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; font-size:14px; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5714; }
 
-/* ===== HEADER ===== */
-#app-header {
-  background:var(--surface); border-bottom:1px solid var(--border);
-  height:52px; display:flex; align-items:center; gap:12px; padding:0 20px;
-  position:sticky; top:0; z-index:200; box-shadow:var(--shadow);
+/* ===== TOPBAR ===== */
+#topbar {
+  position: fixed; top: 0; left: 0; right: 0; height: 52px;
+  background: #fff; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 24px;
+  z-index: 100; box-shadow: 0 1px 4px rgba(0,0,0,0.06);
 }
-.logo { width:30px;height:30px;background:var(--primary);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:15px;flex-shrink:0; }
-#app-header h1 { font-size:15px;font-weight:600; }
-#current-batch-name { font-size:12px;color:var(--text-muted);background:var(--bg);padding:3px 10px;border-radius:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
-#upload-btn-header {
-  margin-left:auto; background:var(--primary); color:#fff; border:none;
-  padding:6px 16px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; flex-shrink:0;
-  transition:opacity .2s;
-}
-#upload-btn-header:hover { opacity:.85; }
-#export-btn-header {
-  background:#fff; color:var(--primary); border:1.5px solid var(--primary);
-  padding:6px 14px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; flex-shrink:0;
-  transition:all .2s;
-}
-#export-btn-header:hover { background:var(--primary-light); }
+#topbar .logo { font-size: 16px; font-weight: 700; color: var(--primary); letter-spacing: -0.3px; }
+#topbar .logo span { color: var(--text-secondary); font-weight: 400; font-size: 13px; margin-left: 8px; }
+.topbar-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 
-/* ===== APP LAYOUT ===== */
-#app-wrap { display:flex; height:calc(100vh - 52px); overflow:hidden; }
+/* ===== LAYOUT ===== */
+#app-wrap {
+  display: flex;
+  margin-top: 52px;
+  height: calc(100vh - 52px);
+  overflow: hidden;
+}
+#sidebar {
+  width: var(--sidebar-w);
+  background: #fff;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+#main-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--bg);
+}
+#main-area {
+  padding: 20px;
+  min-height: 100%;
+}
 
 /* ===== SIDEBAR ===== */
-#sidebar {
-  width:var(--sidebar-w); flex-shrink:0; background:var(--surface);
-  border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden;
+.sidebar-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
+.sidebar-header h2 { font-size: 13px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+.sidebar-list { flex: 1; overflow-y: auto; padding: 8px; }
+.batch-item {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  margin-bottom: 2px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  transition: background 0.15s;
+  border: 1px solid transparent;
+}
+.batch-item:hover { background: #f5f7fa; }
+.batch-item.active {
+  background: #e8f4ff;
+  border-color: #bae0ff;
+}
+.batch-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--primary); margin-top: 5px; flex-shrink: 0;
+}
+.batch-item.active .batch-dot { background: var(--primary); }
+.batch-info { flex: 1; min-width: 0; }
+.batch-name { font-size: 13px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.batch-meta { font-size: 11px; color: var(--text-secondary); margin-top: 1px; }
+.batch-del {
+  width: 20px; height: 20px; border-radius: 4px; border: none;
+  background: transparent; cursor: pointer; color: var(--text-tertiary);
+  display: flex; align-items: center; justify-content: center; font-size: 14px;
+  opacity: 0; transition: opacity 0.15s, color 0.15s, background 0.15s; flex-shrink: 0;
+}
+.batch-item:hover .batch-del { opacity: 1; }
+.batch-del:hover { color: var(--error); background: #fff1f0; }
+.sidebar-footer { padding: 12px 8px; border-top: 1px solid var(--border); }
 
-/* ===== CONTENT + TABLE SPLIT ===== */
-#content-table-wrap { flex:1; display:flex; flex-direction:column; overflow:hidden; }
-#main-area-outer { flex:1; overflow:hidden; display:flex; flex-direction:column; min-height:0; }
-#table-section { flex-shrink:0; border-top:2px solid var(--border); background:var(--surface); display:flex; flex-direction:column; height:320px; resize:vertical; overflow:hidden; }
-#table-section.hidden { display:none !important; }
-#table-section .ts-header { display:flex; align-items:center; gap:8px; padding:8px 14px; border-bottom:1px solid var(--border); flex-shrink:0; flex-wrap:wrap; }
-#table-section .ts-header h3 { font-size:14px; font-weight:600; }
-#table-section .ts-body { flex:1; overflow:hidden; display:flex; flex-direction:column; min-height:0; }
-#table-section .table-scroll { flex:1; overflow:auto; }
-#table-section #pagination { flex-shrink:0; padding:6px 14px; border-top:1px solid var(--border); }
-#sidebar-header { padding:14px 16px; font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border); flex-shrink:0; }
-#batch-list { flex:1; overflow-y:auto; padding:6px 0; }
-.batch-item { padding:10px 14px; cursor:pointer; transition:background .15s; border-bottom:1px solid var(--border); position:relative; }
-.batch-item:hover { background:var(--bg); }
-.batch-item.active { background:var(--primary-light); border-left:3px solid var(--primary); }
-.batch-item .b-name { font-size:13px;font-weight:600;margin-bottom:3px; white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:24px; }
-.batch-item .b-meta { font-size:11px;color:var(--text-muted); }
-.batch-del { position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer; color:var(--text-muted);font-size:14px;padding:2px 5px;border-radius:4px;opacity:0; transition:opacity .15s; }
-.batch-item:hover .batch-del { opacity:1; }
-.batch-del:hover { color:var(--danger);background:rgba(225,87,89,.1); }
-.no-batch { padding:32px 16px;text-align:center;color:var(--text-muted);font-size:12px; }
-
-/* ===== MAIN SCROLL AREA ===== */
-#main-area-outer { flex:1; overflow:hidden; display:flex; flex-direction:column; min-height:0; }
-#main-area { flex:1; overflow-y:auto; padding:16px 20px; display:flex; flex-direction:column; gap:16px; min-height:0; }
+/* ===== DROP ZONE ===== */
+#drop-zone {
+  border: 2px dashed #d9d9d9; border-radius: var(--radius);
+  padding: 24px 16px; text-align: center; cursor: pointer;
+  transition: border-color 0.2s, background 0.2s; background: transparent;
+}
+#drop-zone:hover, #drop-zone.dragover { border-color: var(--primary); background: #e8f4ff; }
+#drop-zone .drop-icon { font-size: 24px; color: var(--text-tertiary); display: block; margin-bottom: 8px; }
+#drop-zone p { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
+#drop-zone input[type=file] { display: none; }
 
 /* ===== EMPTY STATE ===== */
-#empty-state { display:flex;align-items:center;justify-content:center;flex:1;min-height:400px; }
-.upload-box { background:var(--surface);border:2px dashed var(--border);border-radius:16px; padding:60px 40px;text-align:center;cursor:pointer;transition:all .2s;max-width:500px;width:100%; }
-.upload-box:hover,.upload-box.drag-over { border-color:var(--primary);background:var(--primary-light);transform:scale(1.01); }
-.upload-icon { font-size:48px;display:block;margin-bottom:16px; }
-.upload-box h2 { font-size:18px;font-weight:600;margin-bottom:8px; }
-.upload-box p { color:var(--text-muted);font-size:13px;margin-bottom:20px; }
-.btn-primary { display:inline-block;background:var(--primary);color:#fff;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;transition:opacity .2s;border:none; }
-.btn-primary:hover { opacity:.85; }
-.upload-hint { margin-top:10px;font-size:12px;color:var(--text-muted); }
-
-/* ===== TREND SECTION ===== */
-#trend-section { background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden; }
+#empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 400px; text-align: center; padding: 40px;
+}
+#empty-state .empty-icon { font-size: 48px; color: var(--text-tertiary); margin-bottom: 16px; }
+#empty-state h3 { font-size: 16px; color: var(--text); margin-bottom: 8px; }
+#empty-state p { font-size: 14px; color: var(--text-secondary); }
 
 /* ===== STAT CARDS ===== */
-#stat-cards { display:grid;grid-template-columns:repeat(4,1fr);gap:14px; }
-.stat-card { background:var(--surface);border-radius:var(--radius);padding:16px 18px; box-shadow:var(--shadow);border-left:4px solid var(--primary); }
-.stat-card.green { border-left-color:var(--success); }
-.stat-card.orange { border-left-color:var(--warning); }
-.stat-card.red { border-left-color:var(--danger); }
-.stat-card .sc-label { font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px; }
-.stat-card .sc-value { font-size:24px;font-weight:700; }
-.stat-card .sc-sub { font-size:11px;color:var(--text-muted);margin-top:2px; }
-
-/* ===== CARD ===== */
-.card { background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden; }
-.card-header { padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px; }
-.card-header h3 { font-size:14px;font-weight:600; }
-.card-body { padding:16px 18px; }
-.chart-wrap { position:relative; }
-
-/* ===== SECTION HEADER ===== */
-.section-header { padding:12px 18px;border-bottom:1px solid var(--border);display:flex; align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px; }
-.section-header h3 { font-size:14px;font-weight:600; }
-.section-body { padding:16px 18px; }
-
-/* ===== LEGEND ===== */
-.legend-row { display:flex;gap:16px;font-size:12px;color:var(--text-muted);flex-wrap:wrap; }
-.legend-dot { display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px; }
-
-/* ===== TWO-COLUMN ROW ===== */
-.two-col { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-.two-col-wide { display:grid; grid-template-columns:1fr 1.6fr; gap:16px; }
-
-/* ===== DATA TABLE ===== */
-.table-scroll {
-  overflow-x:auto; overflow-y:auto;
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.stat-card {
+  background: var(--card-bg); border-radius: var(--radius);
+  border: 1px solid var(--border); padding: 16px;
+  box-shadow: var(--shadow-sm); transition: box-shadow 0.2s;
 }
-.data-table { width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap; }
-.data-table th { background:var(--bg);padding:8px 11px;text-align:left;font-weight:600; color:var(--text-muted);border-bottom:2px solid var(--border); position:sticky;top:0;z-index:1;font-size:11px;text-transform:uppercase;letter-spacing:.04em; cursor:pointer;user-select:none; }
-.data-table th:hover { background:#dde5ef; }
-.data-table th.sort-asc::after { content:' ▲'; font-size:9px; }
-.data-table th.sort-desc::after { content:' ▼'; font-size:9px; }
-.data-table td { padding:6px 11px;border-bottom:1px solid var(--border); }
-.data-table tr:hover td { background:var(--primary-light); }
-.score-chip { display:inline-block;padding:2px 8px;border-radius:10px;font-weight:600;font-size:11px; }
-.score-high { background:#d4edda;color:#155724; }
-.score-mid { background:#fff3cd;color:#856404; }
-.score-low { background:#f8d7da;color:#721c24; }
-.score-1 { background:#f5c6cb;color:#491217;font-weight:700; }
+.stat-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+.stat-card-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; display: flex; align-items: center; gap: 4px; }
+.stat-card-value { font-size: 28px; font-weight: 700; line-height: 1.2; color: var(--text); }
+.stat-card-sub { font-size: 11px; color: var(--text-tertiary); margin-top: 4px; }
+.stat-card-value.good { color: var(--success); }
+.stat-card-value.warn { color: var(--warning); }
+.stat-card-value.bad { color: var(--error); }
 
-/* pagination */
-#pagination { display:flex;align-items:center;gap:8px;padding:10px 18px;border-top:1px solid var(--border);font-size:13px;flex-wrap:wrap; }
-.page-btn { background:var(--bg);border:1px solid var(--border);border-radius:5px; padding:4px 10px;cursor:pointer;font-size:12px;color:var(--text);transition:all .15s; }
-.page-btn:hover:not(:disabled) { border-color:var(--primary);color:var(--primary); }
-.page-btn:disabled { opacity:.4;cursor:default; }
-.page-btn.active { background:var(--primary);border-color:var(--primary);color:#fff; }
-#page-info { color:var(--text-muted);font-size:12px; }
-#table-search { background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:13px;width:180px; }
+/* ===== CARDS ===== */
+.card {
+  background: var(--card-bg); border-radius: var(--radius);
+  border: 1px solid var(--border); box-shadow: var(--shadow-sm);
+  margin-bottom: 16px; overflow: hidden;
+}
+.card-header {
+  padding: 14px 20px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.card-header h3 { font-size: 15px; font-weight: 600; color: var(--text); flex-shrink: 0; }
+.card-header-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.card-body { padding: 16px 20px; }
+
+/* ===== CHARTS ===== */
+.charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.chart-wrap { position: relative; height: 240px; }
+canvas { display: block; }
+
+/* ===== TREND ===== */
+.trend-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.trend-metric-btns { display: flex; gap: 4px; flex-wrap: wrap; }
+.metric-btn {
+  padding: 3px 10px; font-size: 12px; border-radius: 100px;
+  border: 1px solid var(--border); background: #fff;
+  cursor: pointer; color: var(--text-secondary);
+  transition: all 0.15s; white-space: nowrap;
+}
+.metric-btn:hover { border-color: var(--primary); color: var(--primary); }
+.metric-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.trend-chart-wrap { height: 260px; }
+
+/* ===== BATCH SELECTOR ===== */
+.batch-selector-wrap { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.batch-sel-label { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+.batch-sel-btn {
+  padding: 2px 8px; font-size: 11px; border-radius: 4px;
+  border: 1px solid var(--border); background: #fff;
+  cursor: pointer; color: var(--text-secondary);
+  transition: all 0.15s; white-space: nowrap;
+}
+.batch-sel-btn:hover { border-color: var(--primary); color: var(--primary); }
+.batch-sel-btn.selected { background: #e8f4ff; border-color: #bae0ff; color: var(--primary); }
+
+/* ===== TABLE SECTION ===== */
+#table-section { margin-bottom: 0; }
+.table-toolbar {
+  padding: 12px 20px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.search-input {
+  padding: 5px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-size: 13px; color: var(--text); outline: none; width: 200px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.search-input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(22,119,255,0.1); }
+.filter-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; background: #e8f4ff; border: 1px solid #bae0ff;
+  border-radius: 4px; font-size: 12px; color: var(--primary); cursor: pointer;
+}
+.filter-badge:hover { background: #bae0ff; }
+
+.table-scroll { overflow-x: auto; overflow-y: auto; max-height: 500px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; white-space: nowrap; }
+thead th {
+  padding: 10px 12px; background: #fafafa; border-bottom: 1px solid var(--border);
+  font-weight: 600; color: var(--text-secondary); text-align: left;
+  position: sticky; top: 0; z-index: 2; cursor: pointer; user-select: none;
+  white-space: nowrap;
+}
+thead th:hover { background: #f0f0f0; color: var(--text); }
+thead th .sort-icon { font-size: 11px; color: var(--text-tertiary); }
+thead th.sorted { color: var(--primary); }
+thead th.sorted .sort-icon { color: var(--primary); }
+tbody tr { transition: background 0.1s; }
+tbody tr:hover { background: #f5f7fa; }
+tbody tr.highlighted { background: #fff7e6; }
+tbody td { padding: 9px 12px; border-bottom: 1px solid var(--border); color: var(--text); }
+tbody td:last-child, thead th:last-child { border-right: none; }
+.score-cell { font-weight: 600; }
+.score-high { color: var(--success); }
+.score-mid { color: var(--warning); }
+.score-low { color: var(--error); }
+.expand-btn {
+  padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px;
+  background: #fafafa; cursor: pointer; font-size: 11px; color: var(--text-secondary);
+  transition: all 0.15s;
+}
+.expand-btn:hover { border-color: var(--primary); color: var(--primary); background: #e8f4ff; }
+.subdim-row { background: #fafafa !important; }
+.subdim-row td { font-size: 12px; color: var(--text-secondary); }
+.subdim-table { width: 100%; border-collapse: collapse; }
+.subdim-table td { padding: 4px 8px; border-bottom: 1px solid #f0f0f0; }
+
+.pagination {
+  padding: 10px 20px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap;
+}
+.pagination span { font-size: 13px; color: var(--text-secondary); }
+.pg-btn {
+  padding: 3px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: #fff; cursor: pointer; font-size: 13px; color: var(--text);
+  transition: all 0.15s;
+}
+.pg-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.pg-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.pg-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.pg-size-sel {
+  padding: 3px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: #fff; font-size: 13px; color: var(--text); cursor: pointer; outline: none;
+}
+.pg-size-sel:focus { border-color: var(--primary); }
+
+/* ===== BUTTONS ===== */
+.btn {
+  padding: 6px 14px; border-radius: var(--radius-sm); border: 1px solid;
+  font-size: 13px; cursor: pointer; transition: all 0.15s; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+}
+.btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+.btn-default { background: #fff; border-color: var(--border); color: var(--text); }
+.btn-default:hover { border-color: var(--primary); color: var(--primary); }
+.btn-sm { padding: 3px 8px; font-size: 12px; }
+.btn-danger { background: #fff1f0; border-color: #ffa39e; color: var(--error); }
+.btn-danger:hover { background: #ff4d4f; border-color: #ff4d4f; color: #fff; }
 
 /* ===== MODAL ===== */
-#modal-overlay { display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500; align-items:center;justify-content:center; }
-#modal-overlay.show { display:flex; }
-.modal-box { background:var(--surface);border-radius:12px;padding:28px;min-width:320px;max-width:460px;box-shadow:0 8px 40px rgba(0,0,0,.2); }
-.modal-box h3 { font-size:16px;font-weight:600;margin-bottom:10px; }
-.modal-box p { font-size:13px;color:var(--text-muted);margin-bottom:16px; }
-.modal-input { width:100%;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:14px;margin-bottom:16px;outline:none; }
-.modal-input:focus { border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-light); }
-.modal-actions { display:flex;gap:10px;justify-content:flex-end; }
-.btn-cancel { background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 18px;cursor:pointer;font-size:13px; }
-.btn-confirm { background:var(--primary);color:#fff;border:none;border-radius:6px;padding:7px 18px;cursor:pointer;font-size:13px;font-weight:500; }
-.btn-danger-confirm { background:var(--danger);color:#fff;border:none;border-radius:6px;padding:7px 18px;cursor:pointer;font-size:13px;font-weight:500; }
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+}
+.modal {
+  background: #fff; border-radius: var(--radius); box-shadow: 0 6px 40px rgba(0,0,0,0.15);
+  max-width: 520px; width: 90%; max-height: 90vh; overflow-y: auto;
+}
+.modal-header {
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal-header h3 { font-size: 16px; font-weight: 600; }
+.modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text-tertiary); padding: 2px; }
+.modal-close:hover { color: var(--text); }
+.modal-body { padding: 20px; }
+.modal-footer { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
 
-/* ===== LOADING ===== */
-#loading-overlay { display:none;position:fixed;inset:0;background:rgba(255,255,255,.85);z-index:400;align-items:center;justify-content:center;flex-direction:column;gap:12px; }
-#loading-overlay.show { display:flex; }
-.spinner { width:38px;height:38px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite; }
-@keyframes spin { to { transform:rotate(360deg); } }
-
-/* ===== ERROR BANNER ===== */
-#error-banner { display:none;background:#fff5f5;border:1px solid #fed7d7;border-radius:8px;padding:10px 16px;margin:0 0 4px;color:#c53030;font-size:13px; }
-#error-banner.show { display:block; }
+/* ===== SHARE MODAL ===== */
+.share-textarea {
+  width: 100%; height: 200px; padding: 10px; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); font-size: 12px; font-family: monospace;
+  resize: vertical; outline: none;
+}
+.share-textarea:focus { border-color: var(--primary); }
 
 /* ===== TOAST ===== */
-#toast { position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(10px); background:#2d3748;color:#fff;padding:10px 20px;border-radius:8px;font-size:13px; opacity:0;transition:all .3s;z-index:600;pointer-events:none; }
-#toast.show { opacity:1;transform:translateX(-50%) translateY(0); }
+#toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #333; color: #fff; padding: 10px 20px; border-radius: var(--radius-sm);
+  font-size: 14px; z-index: 9999; opacity: 0; pointer-events: none;
+  transition: opacity 0.2s; max-width: 400px; text-align: center;
+}
+#toast.show { opacity: 1; }
+#toast.success { background: var(--success); }
+#toast.error { background: var(--error); }
+
+/* ===== MISC ===== */
+.section-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+.no-data { text-align: center; padding: 40px; color: var(--text-tertiary); font-size: 14px; }
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.tag {
+  display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px;
+  background: #f0f0f0; color: var(--text-secondary); margin: 1px;
+}
+.tag-new { background: #e8f4ff; color: var(--primary); }
+.tag-old { background: #f6ffed; color: var(--success); }
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d9d9d9; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #bfbfbf; }
 
 /* ===== RESPONSIVE ===== */
-@media (max-width:1100px) {
-  .two-col, .two-col-wide { grid-template-columns:1fr; }
+@media (max-width: 768px) {
+  #sidebar { width: 200px; }
+  .charts-row { grid-template-columns: 1fr; }
+  .stat-grid { grid-template-columns: repeat(2, 1fr); }
 }
-@media (max-width:900px) {
-  #stat-cards { grid-template-columns:repeat(2,1fr); }
-  #sidebar { width:180px; }
+
+/* ===== LOADING ===== */
+.loading { display: flex; align-items: center; justify-content: center; padding: 40px; gap: 8px; color: var(--text-secondary); font-size: 14px; }
+.spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* batch name editing */
+.batch-name-edit {
+  font-size: 13px; border: 1px solid var(--primary); border-radius: 4px;
+  padding: 1px 4px; width: 100%; outline: none; color: var(--text);
 }
-@media (max-width:640px) {
-  #app-wrap { flex-direction:column; }
-  #sidebar { width:100%;height:auto;max-height:160px;border-right:none;border-bottom:1px solid var(--border); }
-  #batch-list { display:flex;flex-direction:row;overflow-x:auto;overflow-y:hidden;padding:4px; }
-  .batch-item { min-width:140px;border-bottom:none;border-right:1px solid var(--border); }
-  #stat-cards { grid-template-columns:repeat(2,1fr); }
-  #main-area { padding:12px; }
-}
-.hidden { display:none !important; }
-
-/* ===== ALL-LABELS CHART WITH SUBDIM ===== */
-.dim-subdim-wrap { margin-top:16px; }
-.dim-tree { border:1px solid var(--border); border-radius:8px; overflow:hidden; }
-.dim-tree-header {
-  padding:9px 14px; background:var(--bg); cursor:pointer;
-  display:flex; align-items:center; justify-content:space-between;
-  font-size:13px; font-weight:600; user-select:none; transition:background .15s;
-  border-bottom:1px solid var(--border);
-}
-.dim-tree-header:last-child { border-bottom:none; }
-.dim-tree-header:hover { background:#e8eef5; }
-.dim-tree-title { display:flex; align-items:center; gap:8px; }
-.dim-arrow { font-size:10px; color:var(--text-muted); transition:transform .2s; }
-.dim-arrow.open { transform:rotate(90deg); }
-.dim-badge { font-size:11px; color:var(--text-muted); font-weight:400; }
-.dim-body { display:none; padding:12px 14px; background:#fff; border-top:1px solid var(--border); }
-.dim-body.open { display:block; }
-
-/* L2 item */
-.l2-item { margin-bottom:6px; }
-.l2-bar-row { display:flex; align-items:center; gap:8px; padding:4px 6px; border-radius:5px; cursor:pointer; transition:background .15s; }
-.l2-bar-row:hover { background:var(--primary-light); }
-.l2-expand-icon { font-size:10px; color:var(--text-muted); width:12px; flex-shrink:0; transition:transform .15s; }
-.l2-expand-icon.open { transform:rotate(90deg); }
-.l2-name { font-size:12px; font-weight:500; min-width:160px; flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:240px; }
-.l2-bar-bg { flex:1; height:13px; background:var(--border); border-radius:3px; overflow:hidden; min-width:60px; }
-.l2-bar-fill { height:100%; background:var(--primary); border-radius:3px; transition:width .4s; }
-.l2-stat { font-size:11px; color:var(--text-muted); min-width:90px; text-align:right; flex-shrink:0; }
-
-/* L3 list */
-.l3-list { display:none; padding:4px 0 2px 32px; }
-.l3-list.open { display:block; }
-.l3-item { display:flex; align-items:center; gap:6px; margin-bottom:5px; }
-.l3-name { font-size:11px; color:var(--text-muted); min-width:140px; flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:200px; }
-.l3-bar-bg { flex:1; height:9px; background:var(--border); border-radius:2px; overflow:hidden; min-width:40px; }
-.l3-bar-fill { height:100%; background:#76b7b2; border-radius:2px; }
-.l3-stat { font-size:10px; color:var(--text-muted); min-width:70px; text-align:right; flex-shrink:0; }
-.subdim-empty { text-align:center; padding:16px; color:var(--text-muted); font-size:12px; }
-
-/* ===== SUBDIM DIM BUTTONS ===== */
-.subdim-dim-btn-row { display:flex; flex-wrap:wrap; gap:6px; }
-.subdim-dim-btn { padding:4px 10px; border-radius:14px; border:1.5px solid var(--border); background:var(--bg); font-size:12px; font-weight:500; cursor:pointer; color:var(--text-muted); transition:all .15s; white-space:nowrap; }
-.subdim-dim-btn:hover { border-color:var(--primary); color:var(--primary); background:var(--primary-light); }
-.subdim-dim-btn.active { background:var(--primary); border-color:var(--primary); color:#fff; }
-
-/* ===== DETAIL FILTER BADGE ===== */
-.filter-badge { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--primary); background:var(--primary-light); padding:3px 10px; border-radius:10px; font-weight:500; border:1px solid rgba(78,121,167,0.2); }
-#detail-clear-btn { font-size:12px; padding:3px 10px; border-radius:6px; border:1px solid var(--border); background:var(--bg); cursor:pointer; color:var(--text-muted); transition:all .15s; }
-#detail-clear-btn:hover { border-color:var(--danger); color:var(--danger); }
-
-/* ===== FILTERABLE CHARTS ===== */
-#overall-dist-chart, #lowrate-chart, #all-labels-chart { cursor:pointer; }
-.l2-filter-target { cursor:pointer; color:var(--primary); text-decoration:underline; text-underline-offset:2px; }
-.l3-filter-target { cursor:pointer; color:var(--primary); text-decoration:underline; text-underline-offset:1px; }
-.l2-bar-row.filter-active { background:var(--primary-light); outline:2px solid var(--primary); border-radius:5px; }
-.l3-item.filter-active { background:var(--primary-light); border-radius:4px; outline:1px solid var(--primary); }
 </style>
 </head>
 <body>
 
-<div id="loading-overlay"><div class="spinner"></div><span style="color:var(--text-muted);font-size:13px">正在处理...</span></div>
-<div id="toast"></div>
+<div id="topbar">
+  <div class="logo">DataQuality <span>可视化平台</span></div>
+  <div class="topbar-actions">
+    <button class="btn btn-default btn-sm" onclick="showShareModal()">导出分享版</button>
+    <button class="btn btn-default btn-sm" onclick="clearAllData()">清空全部数据</button>
+  </div>
+</div>
 
-<!-- Modal -->
-<div id="modal-overlay">
-  <div class="modal-box" id="modal-box">
-    <h3 id="modal-title">命名批次</h3>
-    <p id="modal-desc">无法从文件名中识别时间信息，请手动输入批次名称（如：2025年3月）</p>
-    <input class="modal-input" id="modal-input" type="text" placeholder="请输入批次名称">
-    <div class="modal-actions">
-      <button class="btn-cancel" id="modal-cancel">取消</button>
-      <button class="btn-confirm" id="modal-confirm">确认</button>
+<div id="app-wrap">
+  <div id="sidebar">
+    <div class="sidebar-header">
+      <h2>批次列表</h2>
+      <span id="batch-count" style="font-size:12px;color:var(--text-secondary)">0个</span>
+    </div>
+    <div class="sidebar-list" id="batch-list"></div>
+    <div class="sidebar-footer">
+      <div id="drop-zone">
+        <span class="drop-icon">&#8686;</span>
+        <p>拖放 CSV 文件<br>或点击上传</p>
+        <input type="file" id="file-input" accept=".csv" multiple>
+      </div>
+    </div>
+  </div>
+
+  <div id="main-scroll">
+    <div id="main-area">
+      <div id="content-root"></div>
     </div>
   </div>
 </div>
 
-<!-- Header -->
-<header id="app-header">
-  <div class="logo">Q</div>
-  <h1>数据质量可视化平台</h1>
-  <span id="current-batch-name" class="hidden"></span>
-  <button id="export-btn-header" class="hidden">导出分享版</button>
-  <button id="upload-btn-header">上传新批次</button>
-</header>
+<div id="toast"></div>
 
-<div id="app-wrap">
-  <!-- Sidebar -->
-  <aside id="sidebar">
-    <div id="sidebar-header">历史批次</div>
-    <div id="batch-list"><div class="no-batch">暂无历史数据</div></div>
-  </aside>
-
-  <!-- Content + Table split -->
-  <div id="content-table-wrap">
-    <!-- Charts area (scrollable) -->
-    <div id="main-area-outer">
-      <div id="main-area">
-    <div id="error-banner"></div>
-
-    <!-- Empty state -->
-    <div id="empty-state">
-      <div class="upload-box" id="drop-zone">
-        <span class="upload-icon">📊</span>
-        <h2>上传 CSV 数据文件</h2>
-        <p>支持拖拽上传，自动计算整体分、低分率等质量指标</p>
-        <label class="btn-primary">选择文件<input type="file" id="file-input" accept=".csv,text/csv" style="display:none"></label>
-        <div class="upload-hint">支持 .csv 格式 · 最大 100MB · 数据将自动保存</div>
-      </div>
+<!-- Share Modal -->
+<div id="share-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('share-modal')">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>导出分享版</h3>
+      <button class="modal-close" onclick="closeModal('share-modal')">&#215;</button>
     </div>
-
-    <!-- Trend — always visible once any batch loaded -->
-    <div id="trend-section" class="hidden">
-      <div class="section-header">
-        <h3>历史趋势对比</h3>
-        <div class="legend-row">
-          <span><span class="legend-dot" style="background:#4e79a7"></span>平均整体分</span>
-          <span><span class="legend-dot" style="background:#e15759"></span>整体低分率(%)</span>
-          <span id="trend-hint" style="font-size:11px;color:var(--warning);font-weight:500"></span>
-        </div>
-      </div>
-      <div class="section-body">
-        <div class="chart-wrap" style="height:180px"><canvas id="trend-chart"></canvas></div>
-      </div>
+    <div class="modal-body">
+      <p style="margin-bottom:12px;color:var(--text-secondary);font-size:13px">将当前所有批次数据打包为 JSON，可导入到另一台设备。</p>
+      <textarea id="share-textarea" class="share-textarea" readonly placeholder="生成中..."></textarea>
     </div>
-
-    <!-- Stats -->
-    <div id="stat-cards" class="hidden">
-      <div class="stat-card">
-        <div class="sc-label">数据样本数</div>
-        <div class="sc-value" id="sc-total">—</div>
-        <div class="sc-sub">条记录</div>
-      </div>
-      <div class="stat-card green">
-        <div class="sc-label">平均整体分</div>
-        <div class="sc-value" id="sc-avg">—</div>
-        <div class="sc-sub">满分 5 分</div>
-      </div>
-      <div class="stat-card orange">
-        <div class="sc-label">整体低分率</div>
-        <div class="sc-value" id="sc-low">—</div>
-        <div class="sc-sub">整体分 ≤ 2 的占比</div>
-      </div>
-      <div class="stat-card red">
-        <div class="sc-label">高质率</div>
-        <div class="sc-value" id="sc-high">—</div>
-        <div class="sc-sub">整体分 ≥ 4 的占比</div>
-      </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="closeModal('share-modal')">关闭</button>
+      <button class="btn btn-primary" onclick="copyShareData()">复制到剪贴板</button>
+      <button class="btn btn-primary" onclick="downloadShareData()">下载 JSON</button>
     </div>
+  </div>
+</div>
 
-    <!-- Row 1: Overall dist + Low rate (left-right) -->
-    <div class="two-col hidden" id="row-dist-lowrate">
-      <!-- Overall score distribution -->
-      <div class="card">
-        <div class="card-header"><h3>整体分分布</h3></div>
-        <div class="card-body">
-          <div class="chart-wrap" style="height:300px"><canvas id="overall-dist-chart"></canvas></div>
-        </div>
-      </div>
-      <!-- Low rate by label -->
-      <div class="card">
-        <div class="card-header">
-          <h3>各维度低分率（得分 ≤ 2）</h3>
-        </div>
-        <div class="card-body">
-          <div class="chart-wrap" style="height:300px"><canvas id="lowrate-chart"></canvas></div>
-        </div>
-      </div>
+<!-- Import Modal -->
+<div id="import-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeModal('import-modal')">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>导入数据</h3>
+      <button class="modal-close" onclick="closeModal('import-modal')">&#215;</button>
     </div>
-
-    <!-- Row 2: All-labels dist + Sub-dim tree (left-right) -->
-    <div class="two-col-wide hidden" id="row-labels-subdim">
-      <!-- All labels grouped bar -->
-      <div class="card">
-        <div class="card-header"><h3>各维度分数分布</h3></div>
-        <div class="card-body">
-          <div class="chart-wrap" style="height:340px"><canvas id="all-labels-chart"></canvas></div>
-        </div>
-      </div>
-      <!-- Sub-dim tree panel -->
-      <div class="card" id="subdim-card">
-        <div class="card-header" style="flex-wrap:wrap;gap:8px">
-          <h3>子维度详情</h3>
-          <div id="subdim-dim-btns" class="subdim-dim-btn-row"></div>
-        </div>
-        <div class="card-body" style="padding:10px 12px; overflow-y:auto; max-height:380px;">
-          <div id="all-subdim-panel"></div>
-        </div>
-      </div>
+    <div class="modal-body">
+      <p style="margin-bottom:12px;color:var(--text-secondary);font-size:13px">粘贴之前导出的 JSON 数据：</p>
+      <textarea id="import-textarea" class="share-textarea" placeholder="粘贴JSON数据..."></textarea>
     </div>
-
-    <!-- Data table — fixed bottom panel, always visible -->
-    </div><!-- /#main-area -->
-    </div><!-- /#main-area-outer -->
-
-    <div id="table-section" class="hidden">
-      <div class="ts-header">
-        <h3>数据详情</h3>
-        <span id="detail-filter-badge" class="filter-badge hidden"></span>
-        <button id="detail-clear-btn" class="hidden">清除筛选</button>
-        <input id="table-search" type="text" placeholder="搜索..." style="margin-left:auto;padding:4px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;outline:none;">
-      </div>
-      <div class="ts-body">
-        <div class="table-scroll">
-          <table class="data-table" id="data-table">
-            <thead id="table-head"></thead>
-            <tbody id="table-body"></tbody>
-          </table>
-        </div>
-        <div id="pagination"></div>
-      </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="closeModal('import-modal')">取消</button>
+      <button class="btn btn-primary" onclick="doImport()">导入</button>
     </div>
-  </div><!-- /#content-table-wrap -->
-</div><!-- /#app-wrap -->
+  </div>
+</div>
 
 <script>
 'use strict';
-// ==================== CONSTANTS ====================
-const SCORE_COLS = ['清晰度','内容质量','美学质量','动态基础质量','动态强度'];
-const SCORE_BINS = [1,1.5,2,2.5,3,3.5,4,4.5,5];
-const STORAGE_KEY = 'viz_batches_v6';
-const PAGE_SIZE = 100;
 
-// ==================== NEW FORMAT COLUMN MAPPING ====================
+// ===== CONSTANTS =====
+const STORAGE_KEY = 'viz_batches_v7';
+const PAGE_SIZES = [20, 50, 100, 200];
+
+// New format detection prefix
+const NEW_FORMAT_PREFIX = 'output.视频1-';
 const NEW_FORMAT_SCORE_MAP = {
-  'output.视频1-画面质量-清晰度':       '清晰度',
-  'output.视频1-画面质量-内容质量分':   '内容质量',
-  'output.视频1-画面质量-美学质量分':   '美学质量',
-  'output.视频1-动态质量-动态基础质量': '动态基础质量',
-  'output.视频1-动态质量-动态强度':     '动态强度',
+  'output.视频1-清晰度': '清晰度',
+  'output.视频1-内容质量': '内容质量',
+  'output.视频1-美学质量': '美学质量',
+  'output.视频1-动态基础质量': '动态基础质量',
+  'output.视频1-动态强度': '动态强度'
 };
+const NEW_FORMAT_KEYS = Object.keys(NEW_FORMAT_SCORE_MAP);
+const NEW_FORMAT_VALS = Object.values(NEW_FORMAT_SCORE_MAP);
 
-// NEW_FORMAT_SUBDIM_MAP: maps each dim to an ordered list of tiers.
-// Each tier has: score (L2 label as it appears in main col), srcCol (sub-score column, may be null),
-// and l3 (predefined L3 label list — shown even if count=0 in actual data).
 const NEW_FORMAT_SUBDIM_MAP = {
-  '清晰度': [
-    { score:'极低清视频',  srcCol:'output.1分-极低清视频',   l3:['严重压缩失真','极度噪点','严重模糊'] },
-    { score:'低清视频',    srcCol:'output.2分-低清视频',     l3:['低分辨率模糊','明显噪点','明显块效应'] },
-    { score:'中低清视频',  srcCol:'output.2.5分-中低清视频', l3:['中度/轻度模糊、中度/轻度块效应、中度噪点','轻微镜头脏污、划痕、老旧感','画面中存在模糊/马赛克/遮挡的局部区域'] },
-    { score:'正常清晰度',  srcCol:null,                      l3:[] },
-    { score:'中高清视频',  srcCol:null,                      l3:[] },
-    { score:'高清视频',    srcCol:null,                      l3:[] },
-  ],
-  '内容质量': [
-    { score:'严重的基础质量问题',             srcCol:'output.1分-严重的基础质量问题', l3:['漏检（前景字符未框全）','AIGC一票否决','画面格式异常：竖屏、黑边等','拍摄形式问题：二次拍摄、截图等','误检（误将后景识别成前景）'] },
-    { score:'中度基础质量问题',               srcCol:'output.2分-中度基础质量问题',   l3:['低质量生活场景（凌乱、过暗等）','画面格式存在轻微问题','内容重复或无实质信息'] },
-    { score:'画面内容存在瑕疵',               srcCol:'output.2.5分-画面内容存在瑕疵', l3:['低质量生活场景（凌乱、过暗等）','内容稍显单调','背景略显凌乱'] },
-    { score:'画面内容基本合理，内容质量一般', srcCol:null,                            l3:[] },
-    { score:'中高内容质量',                   srcCol:null,                            l3:[] },
-    { score:'内容质量较高',                   srcCol:null,                            l3:[] },
-  ],
-  '美学质量': [
-    { score:'画面无美感',     srcCol:'output.1分-画面无美感',     l3:['严重光斑','老旧审丑动漫','严重色偏'] },
-    { score:'画面美感较差',   srcCol:'output.2分-画面美感较差',   l3:['色彩、曝光都处于及格线边缘，且两者均偏差','严重光斑','主体不完整'] },
-    { score:'中低画面美感',   srcCol:'output.2.5分-中低画面美感', l3:['色彩、曝光都处于及格线边缘，且两者均偏差','轻微光斑','老旧审丑动漫','主体不完整'] },
-    { score:'画面美感正常',   srcCol:null,                        l3:[] },
-    { score:'中高画面美感',   srcCol:null,                        l3:[] },
-    { score:'画面美感较好，优质创作', srcCol:null,                l3:[] },
-  ],
-  '动态基础质量': [
-    { score:'基础质量不合格',   srcCol:'output.1分-基础质量不合格',   l3:['跳变','转场/渐变切镜/PPT轮播','严重镜头抖动','长时间静止或几乎无动态'] },
-    { score:'中低动态基础质量', srcCol:'output.2分-中低动态基础质量', l3:['轻微明暗变化','轻微晃动运镜','轻微镜头抖动'] },
-    { score:'存在运动瑕疵',     srcCol:'output.2.5分-存在运动瑕疵',   l3:['轻微明暗变化','轻微晃动运镜','跳变','转场/渐变切镜/PPT轮播','轻微镜头抖动'] },
-    { score:'正常动态',         srcCol:null,                          l3:[] },
-    { score:'正常动态增强',     srcCol:null,                          l3:[] },
-    { score:'复杂动态',         srcCol:null,                          l3:[] },
-  ],
-  '动态强度': [
-    { score:'无动态',    srcCol:'output.1分-无动态',    l3:['无运镜+小幅度动作','静态画面'] },
-    { score:'低动态',    srcCol:'output.2分-低动态',    l3:['动作幅度不足','运镜动力不足'] },
-    { score:'中低动态',  srcCol:'output.2.5分-中低动态',l3:['动作幅度不足','运镜动力不足','无运镜+小幅度动作','动态略显呆板'] },
-    { score:'正常动态',  srcCol:null,                   l3:[] },
-    { score:'正常动态增强', srcCol:null,                l3:[] },
-    { score:'高动态',    srcCol:null,                   l3:[] },
-  ],
+    '清晰度': [
+        { score:'极低清视频', srcCol:'output.1分-极低清视频' },
+        { score:'低清视频', srcCol:'output.2分-低清视频' },
+        { score:'中低清视频', srcCol:'output.2.5分-中低清视频' },
+        { score:'正常清晰度', srcCol:null },
+        { score:'中高清视频', srcCol:null },
+        { score:'高清视频', srcCol:null },
+    ],
+    '内容质量': [
+        { score:'严重的基础质量问题', srcCol:'output.1分-严重的基础质量问题' },
+        { score:'中度基础质量问题', srcCol:'output.2分-中度基础质量问题' },
+        { score:'画面内容存在瑕疵', srcCol:'output.2.5分-画面内容存在瑕疵' },
+        { score:'画面内容基本合理，内容质量一般', srcCol:null },
+        { score:'中高内容质量', srcCol:null },
+        { score:'内容质量较高', srcCol:null },
+    ],
+    '美学质量': [
+        { score:'画面无美感', srcCol:'output.1分-画面无美感' },
+        { score:'画面美感较差', srcCol:'output.2分-画面美感较差' },
+        { score:'中低画面美感', srcCol:'output.2.5分-中低画面美感' },
+        { score:'画面美感正常', srcCol:null },
+        { score:'中高画面美感', srcCol:null },
+        { score:'画面美感较好，优质创作', srcCol:null },
+    ],
+    '动态基础质量': [
+        { score:'基础质量不合格', srcCol:'output.1分-基础质量不合格' },
+        { score:'中低动态基础质量', srcCol:'output.2分-中低动态基础质量' },
+        { score:'存在运动瑕疵', srcCol:'output.2.5分-存在运动瑕疵' },
+        { score:'正常动态', srcCol:null },
+        { score:'正常动态增强', srcCol:null },
+        { score:'复杂动态', srcCol:null },
+    ],
+    '动态强度': [
+        { score:'无动态', srcCol:'output.1分-无动态' },
+        { score:'低动态', srcCol:'output.2分-低动态' },
+        { score:'中低动态', srcCol:'output.2.5分-中低动态' },
+        { score:'正常动态', srcCol:null },
+        { score:'正常动态增强', srcCol:null },
+        { score:'高动态', srcCol:null },
+    ],
 };
-
 const NEW_FORMAT_META_COLS = ['任务编号','题包key','任务明细ID','题目ID','标注人','标注时间','是否有效','无效原因','无效标签'];
-// Extra fields to pass through from new-format CSV without renaming
 const NEW_FORMAT_PASSTHROUGH_COLS = ['input.cut_off_url','结果预览','当前节点','质检信息','标注版本'];
-// Some passthrough cols need renaming (srcCol → destCol)
 const NEW_FORMAT_PASSTHROUGH_RENAME = {
-  'output.caption是否描述出问题（漏误检内容及转场跳变等）': 'caption问题',
+    'output.caption是否描述出问题（漏误检内容及转场跳变等）': 'caption问题',
 };
 
-function isNewFormat(rows) {
-  if (!rows || rows.length === 0) return false;
-  const keys = Object.keys(rows[0]);
-  return keys.some(k => k === 'output.视频1-画面质量-清晰度' || k === '\ufeffoutput.视频1-画面质量-清晰度');
+const NEW_OVERALL_FIELD = 'output.视频1-整体分';
+const NEW_ID_FIELD = 'input.编号';
+const NEW_VIDEO_FIELD = 'input.视频链接';
+
+// ===== STATE =====
+let batches = [];         // [{id, name, time, rows, scoreCols, isNewFormat, hasSubdim}]
+let activeBatchId = null;
+let chartFilter = null;   // {type, value} - filter from chart click
+let sortConfig = { col: null, dir: 'asc' };
+let searchQuery = '';
+let currentPage = 1;
+let pageSize = 20;
+let expandedRows = new Set();
+let trendMetric = 'avg'; // 'avg' | 'lowrate' | 'highrate' | dim-name
+let trendSelectedBatches = null; // null = all
+
+// Chart instances
+let charts = {};
+
+// ===== UTILITY =====
+function genId() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
+function showToast(msg, type='', duration=2500) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = type ? `show ${type}` : 'show';
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => { el.className = ''; }, duration);
+}
+function closeModal(id) {
+  document.getElementById(id).style.display = 'none';
+}
+
+// ===== STORAGE =====
+function saveState() {
+  try {
+    const data = batches.map(b => ({
+      id: b.id, name: b.name, time: b.time,
+      rows: b.rows, scoreCols: b.scoreCols,
+      isNewFormat: b.isNewFormat, hasSubdim: b.hasSubdim
+    }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch(e) {
+    showToast('存储空间不足，部分数据可能未保存', 'error');
+  }
+}
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    batches = data.map(b => ({
+      id: b.id || genId(),
+      name: b.name || '未命名',
+      time: b.time || '',
+      rows: b.rows || [],
+      scoreCols: b.scoreCols || [],
+      isNewFormat: !!b.isNewFormat,
+      hasSubdim: !!b.hasSubdim
+    }));
+  } catch(e) {
+    console.error('Load state failed:', e);
+  }
+}
+
+// ===== CSV FORMAT DETECTION =====
+function isNewFormat(rows) {
+  if (!rows || !rows.length) return false;
+  const keys = Object.keys(rows[0]);
+  return NEW_FORMAT_KEYS.some(k => keys.includes(k));
+}
+
+function detectScoreCols(rows) {
+  if (!rows || !rows.length) return { cols: [], isNew: false };
+  if (isNewFormat(rows)) {
+    return { cols: NEW_FORMAT_VALS.slice(), isNew: true };
+  }
+  // Old format: find columns with numeric 1-5 values
+  const keys = Object.keys(rows[0]).filter(k =>
+    !k.startsWith('_') &&
+    !k.endsWith('_level2') &&
+    !k.endsWith('_level3') &&
+    k !== '' &&
+    !/^(input\.|output\.)/.test(k)
+  );
+  const scoreCols = keys.filter(k => {
+    const vals = rows.slice(0, Math.min(50, rows.length))
+      .map(r => parseFloat(r[k]))
+      .filter(v => !isNaN(v));
+    if (vals.length < 3) return false;
+    return vals.every(v => v >= 0.5 && v <= 5.5);
+  });
+  return { cols: scoreCols, isNew: false };
+}
+
+function detectHasSubdim(rows) {
+  if (!rows || !rows.length) return false;
+  const keys = Object.keys(rows[0]);
+  return keys.some(k => k.endsWith('_level2') || k.endsWith('_level3'));
+}
+
 
 function extractScore(val) {
-  if (val == null || val === '') return '';
-  const s = String(val).trim();
-  const m = s.match(/^(\d+(?:\.\d+)?)\s*分/);
-  return m ? m[1] : s;
+    if (val == null || val === '') return '';
+    const s = String(val).trim();
+    const m = s.match(/^(\d+(?:\.\d+)?)\s*分/);
+    return m ? m[1] : s;
 }
 
-function normalizeRows(rawRows) {
-  const newFmt = isNewFormat(rawRows);
-  if (!newFmt) return rawRows;
-
-  return rawRows.map(raw => {
+// ===== NORMALIZE ROWS (new format) =====
+function normalizeRows(rawRows, isNew) {
+  if (!isNew) return rawRows;
+  return rawRows.map((raw) => {
     const row = {};
+    // Copy meta cols
     NEW_FORMAT_META_COLS.forEach(col => { if (col in raw) row[col] = raw[col]; });
     NEW_FORMAT_PASSTHROUGH_COLS.forEach(col => { if (col in raw) row[col] = raw[col]; });
     Object.entries(NEW_FORMAT_PASSTHROUGH_RENAME).forEach(([src, dst]) => { if (src in raw) row[dst] = raw[src]; });
-
+    // Score cols with extractScore
     Object.entries(NEW_FORMAT_SCORE_MAP).forEach(([srcCol, dstCol]) => {
-      const val = raw[srcCol] != null ? raw[srcCol] : raw['\ufeff' + srcCol];
-      row[dstCol] = extractScore(val != null ? val : '');
+        const bom = '\ufeff';
+        const val = raw[srcCol] != null ? raw[srcCol] : raw[bom + srcCol];
+        row[dstCol] = extractScore(val != null ? val : '');
     });
-
+    // Subdim extraction
     Object.entries(NEW_FORMAT_SUBDIM_MAP).forEach(([dim, tiers]) => {
-      const mainSrcCol = Object.entries(NEW_FORMAT_SCORE_MAP).find(([,d]) => d === dim)?.[0];
-      const mainRaw = mainSrcCol ? String(raw[mainSrcCol] || '').trim() : '';
-      const mainLabel = mainRaw.replace(/^\d+(?:\.\d+)?分-/, '').trim();
-
-      const l2Val = mainLabel || '';
-      let l3Vals = [];
-
-      if (l2Val) {
-        // Find the tier definition matching this row's L2 label
-        const tierDef = tiers.find(t => t.score === l2Val);
-        if (tierDef && tierDef.srcCol) {
-          // Parse L3 from the sub-score column value ("code:label;code:label" format)
-          const srcVal = String(raw[tierDef.srcCol] || '').trim();
-          if (srcVal) {
-            srcVal.split(';').forEach(seg => {
-              const label = seg.replace(/^[^:]+:/, '').trim();
-              if (label) l3Vals.push(label);
-            });
-          }
+        const mainSrcCol = Object.entries(NEW_FORMAT_SCORE_MAP).find(([,d]) => d === dim)?.[0];
+        const mainRaw = mainSrcCol ? String(raw[mainSrcCol] || '').trim() : '';
+        const mainLabel = mainRaw.replace(/^\d+(?:\.\d+)?分-/, '').trim();
+        const l2Val = mainLabel || '';
+        let l3Vals = [];
+        if (l2Val) {
+            const tierDef = tiers.find(t => t.score === l2Val);
+            if (tierDef && tierDef.srcCol) {
+                const srcVal = String(raw[tierDef.srcCol] || '').trim();
+                if (srcVal) {
+                    srcVal.split(';').forEach(seg => {
+                        const label = seg.replace(/^[^:]+:/, '').trim();
+                        if (label) l3Vals.push(label);
+                    });
+                }
+            }
+            row[dim + '_level2'] = l2Val;
+            if (l3Vals.length > 0) row[dim + '_level3'] = l3Vals.join('；');
         }
-        row[dim + '_level2'] = l2Val;
-        if (l3Vals.length > 0) row[dim + '_level3'] = l3Vals.join('；');
-      }
     });
-
     row._isNewFormat = true;
     return row;
   });
 }
 
-// ==================== STATE ====================
-let batches = [];
-let currentBatchId = null;
-let tableSortCol = '_overallScore';
-let tableSortDir = 'desc';
-let tableCurrentPage = 1;
-let tableFilteredRows = [];
-let tableSearchText = '';
-let charts = {};
-let activeDimForSubdim = null;
-let activeFilter = null;    // {type:'overall'|'lowrate'|'label'|'subdim', ...}
-let tableBaseRows = null;   // base rows for current filter context
-
-// ==================== UTILS ====================
-function esc(s){ if(s==null)return''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2); }
-function showLoading(v){ document.getElementById('loading-overlay').classList.toggle('show',v); }
-function showError(msg){ const el=document.getElementById('error-banner'); el.textContent='错误：'+msg; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),6000); }
-function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2500); }
-function destroyChart(key){ if(charts[key]){ charts[key].destroy(); charts[key]=null; } }
-function fmtPct(v){ return (v*100).toFixed(1)+'%'; }
-function fmtScore(v){ return Number(v).toFixed(2); }
-
-const SCORE_BIN_COLORS = SCORE_BINS.map(b => b<=2?'#e15759': b<=3?'#f28e2b': b<=4?'#edc948':'#59a14f');
-const DIM_COLORS = ['#4e79a7','#f28e2b','#e15759','#76b7b2','#59a14f'];
-
-// ==================== FILTER HELPERS ====================
-function applyFilter(rows){
-  if(!activeFilter) return rows;
-  const f = activeFilter;
-  if(f.type==='overall') return rows.filter(r=>Math.abs(r._overallScore-f.score)<0.01);
-  if(f.type==='lowrate') return rows.filter(r=>{ const v=parseFloat(r[f.dim]); return !isNaN(v)&&v<=2; });
-  if(f.type==='label')   return rows.filter(r=>{ const v=parseFloat(r[f.dim]); return !isNaN(v)&&Math.abs(v-f.score)<0.01; });
-  if(f.type==='subdim')  return rows.filter(r=>String(r[f.dim+'_level2']||'').trim()===f.l2);
-  if(f.type==='l3') return rows.filter(r=>{
-    const l3Raw = String(r[f.dim+'_level3']||'').trim();
-    return String(r[f.dim+'_level2']||'').trim()===f.l2 && l3Raw.split('；').map(s=>s.trim()).includes(f.l3);
-  });
-  return rows;
-}
-
-function describeFilter(f){
-  if(!f) return '';
-  if(f.type==='overall') return `整体分 = ${f.score}分`;
-  if(f.type==='lowrate') return `${f.dim} 低分（≤ 2）`;
-  if(f.type==='label')   return `${f.dim} = ${f.score}分`;
-  if(f.type==='subdim')  return `${f.dim} · ${f.l2}`;
-  if(f.type==='l3')      return `${f.dim} · ${f.l2} · ${f.l3}`;
-  return '已筛选';
-}
-
-function updateDetailPanel(){
-  const batch = batches.find(b=>b.id===currentBatchId);
-  if(!batch) return;
-  const filtered = applyFilter(tableBaseRows||batch.rows);
-  renderAllLabelsChart(filtered, activeDimForSubdim);  // focus on active dim if any
-  renderDetailTable(filtered);
-}
-
-// ==================== OVERALL SCORE ====================
-function calcOverallScore(row){
+// ===== SCORE CALCULATION =====
+function calcOverallScore(row, scoreCols, isNewFmt) {
   const vals = {};
-  SCORE_COLS.forEach(c => { vals[c] = parseFloat(row[c]); });
-  const all = SCORE_COLS.map(col => vals[col]).filter(v => !isNaN(v));
-  if(all.length === 0) return NaN;
+  scoreCols.forEach(c => { vals[c] = parseFloat(row[c]); });
+  const all = scoreCols.map(c => vals[c]).filter(v => !isNaN(v));
+  if (all.length === 0) return NaN;
+  if (!isNewFmt) {
+    // Old format: simple average
+    return parseFloat((all.reduce((a,b)=>a+b,0)/all.length).toFixed(2));
+  }
+  // New format: use original complex rules
   const qd=vals['清晰度'], cq=vals['内容质量'], ae=vals['美学质量'], db=vals['动态基础质量'], ds=vals['动态强度'];
   if(all.some(x=>x===1)) return 1.00;
   if(all.every(x=>x>=4) && all.filter(x=>x>=5).length>=2) return 5.00;
@@ -610,782 +661,948 @@ function calcOverallScore(row){
   return parseFloat((all.reduce((a,b)=>a+b,0)/all.length).toFixed(2));
 }
 
-// ==================== BATCH NAME FROM FILENAME ====================
-function extractBatchName(filename){
-  const base = filename.replace(/\.[^.]+$/,'').trim();
+function getScoreClass(v) {
+  if (isNaN(v)) return '';
+  if (v >= 3.5) return 'score-high';
+  if (v >= 2.5) return 'score-mid';
+  return 'score-low';
+}
+
+// ===== FILENAME -> TIME =====
+function extractTimeFromFilename(name) {
+  const base = name.replace(/\.[^.]+$/, '').trim();
   const zhMatch = base.match(/(\d{4})年(\d{1,2})月/);
-  if(zhMatch) return `${zhMatch[1]}年${parseInt(zhMatch[2])}月`;
-  const m1 = base.match(/(\d{4})[-_](\d{1,2})/);
-  if(m1) return `${m1[1]}年${parseInt(m1[2])}月`;
+  if (zhMatch) return `${zhMatch[1]}年${parseInt(zhMatch[2])}月`;
+  const m1 = base.match(/(\d{4})[-_](\d{1,2})(?!\d)/);
+  if (m1) return `${m1[1]}年${parseInt(m1[2])}月`;
   const m2 = base.match(/^(\d{4})(\d{2})$/);
-  if(m2) return `${m2[1]}年${parseInt(m2[2])}月`;
+  if (m2) return `${m2[1]}年${parseInt(m2[2])}月`;
   const mq = base.match(/(\d{4})[\s_-]?Q(\d)/i);
-  if(mq) return `${mq[1]}年Q${mq[2]}`;
-  return null;
+  if (mq) return `${mq[1]}年Q${mq[2]}`;
+  const md = base.match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
+  if (md) return `${md[1]}-${md[2]}-${md[3]}`;
+  return base.slice(0, 30) || new Date().toISOString().slice(0, 10);
 }
 
-// ==================== STORAGE ====================
-function saveBatches(){ try { localStorage.setItem(STORAGE_KEY, JSON.stringify(batches)); } catch(e){ showError('存储空间不足'); } }
-function loadBatches(){ try { const s=localStorage.getItem(STORAGE_KEY); if(s) batches=JSON.parse(s); } catch(e){ batches=[]; } }
-
-// ==================== MODAL ====================
-let _modalResolve = null;
-function openModal({ title, desc, defaultVal='', placeholder='请输入批次名称', confirmText='确认', isDanger=false }){
-  return new Promise(resolve => {
-    _modalResolve = resolve;
-    document.getElementById('modal-title').textContent = title;
-    document.getElementById('modal-desc').textContent = desc;
-    const inp = document.getElementById('modal-input');
-    inp.value = defaultVal; inp.placeholder = placeholder; inp.style.display = 'block';
-    const btn = document.getElementById('modal-confirm');
-    btn.textContent = confirmText;
-    btn.className = isDanger ? 'btn-danger-confirm' : 'btn-confirm';
-    document.getElementById('modal-overlay').classList.add('show');
-    inp.focus();
-  });
-}
-function openConfirmModal({ title, desc, confirmText='确认', isDanger=false }){
-  return new Promise(resolve => {
-    _modalResolve = resolve;
-    document.getElementById('modal-title').textContent = title;
-    document.getElementById('modal-desc').textContent = desc;
-    document.getElementById('modal-input').style.display = 'none';
-    const btn = document.getElementById('modal-confirm');
-    btn.textContent = confirmText;
-    btn.className = isDanger ? 'btn-danger-confirm' : 'btn-confirm';
-    document.getElementById('modal-overlay').classList.add('show');
-  });
-}
-function closeModal(val){ document.getElementById('modal-overlay').classList.remove('show'); if(_modalResolve){ _modalResolve(val); _modalResolve=null; } }
-document.getElementById('modal-cancel').onclick = () => closeModal(null);
-document.getElementById('modal-confirm').onclick = () => {
-  const inp = document.getElementById('modal-input');
-  closeModal(inp.style.display==='none' ? true : (inp.value.trim()||null));
-};
-document.getElementById('modal-input').addEventListener('keydown', e => { if(e.key==='Enter') document.getElementById('modal-confirm').click(); });
-
-// ==================== FILE HANDLING ====================
-async function handleFile(file){
-  if(!file.name.toLowerCase().endsWith('.csv') && !file.type.includes('csv')){ showError('请上传 .csv 格式文件'); return; }
-  if(file.size > 100*1024*1024){ showError('文件超过 100MB'); return; }
-
-  let batchName = extractBatchName(file.name);
-  if(!batchName){
-    batchName = await openModal({ title:'命名批次', desc:`无法从文件名「${file.name}」自动识别时间，请手动输入批次名称`, placeholder:'例：2025年3月' });
-    if(!batchName) return;
-  }
-
-  const dup = batches.find(b => b.name === batchName);
-  if(dup){
-    const ok = await openConfirmModal({ title:'批次已存在', desc:`批次「${batchName}」已存在，是否覆盖？`, confirmText:'覆盖', isDanger:true });
-    if(!ok) return;
-    batches = batches.filter(b => b.name !== batchName);
-  }
-
-  showLoading(true);
-  Papa.parse(file, {
-    header:true, skipEmptyLines:true, dynamicTyping:false,
-    complete(results){
-      if(!results.data || results.data.length===0){ showLoading(false); showError('CSV 文件为空'); return; }
-      const normalized = normalizeRows(results.data);
-      const rows = normalized.map(r => {
-        const out = {};
-        Object.keys(r).forEach(k => { out[k]=r[k]; });
-        out._overallScore = calcOverallScore(r);
-        return out;
-      });
-      const batch = { id:uid(), name:batchName, uploadTime:Date.now(), rows };
-      batches.push(batch);
-      batches.sort((a,b)=>a.uploadTime-b.uploadTime);
-      saveBatches();
-      currentBatchId = batch.id;
-      showLoading(false);
-      renderSidebar();
-      renderMainContent();
-      showToast(`批次「${batchName}」上传成功，共 ${rows.length} 条数据`);
-    },
-    error(err){ showLoading(false); showError('解析失败：'+err.message); }
+// ===== CSV UPLOAD =====
+function handleFiles(files) {
+  Array.from(files).forEach(file => {
+    if (!file.name.endsWith('.csv')) {
+      showToast(`${file.name} 不是CSV文件`, 'error');
+      return;
+    }
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete(result) {
+        const rawRows = result.data;
+        if (!rawRows.length) { showToast('CSV 文件为空', 'error'); return; }
+        const { cols: detectedCols, isNew } = detectScoreCols(rawRows);
+        const normalizedRows = normalizeRows(rawRows, isNew);
+        const hasSubdim = detectHasSubdim(normalizedRows);
+        const time = extractTimeFromFilename(file.name);
+        const batchName = file.name.replace(/\.csv$/i, '');
+        const batch = {
+          id: genId(),
+          name: batchName,
+          time: time,
+          rows: normalizedRows,
+          scoreCols: isNew ? NEW_FORMAT_VALS.slice() : detectedCols,
+          isNewFormat: isNew,
+          hasSubdim: hasSubdim
+        };
+        batches.unshift(batch);
+        activeBatchId = batch.id;
+        chartFilter = null;
+        sortConfig = { col: null, dir: 'asc' };
+        searchQuery = '';
+        currentPage = 1;
+        saveState();
+        renderAll();
+        showToast(`已加载 ${normalizedRows.length} 条数据 (${isNew ? '新格式' : '老格式'})`, 'success');
+      },
+      error(err) {
+        showToast(`解析失败: ${err.message}`, 'error');
+      }
+    });
   });
 }
 
-// ==================== SIDEBAR ====================
-function renderSidebar(){
+// ===== RENDER ALL =====
+function renderAll() {
+  renderSidebar();
+  renderContent();
+}
+
+// ===== SIDEBAR =====
+function renderSidebar() {
   const list = document.getElementById('batch-list');
-  if(batches.length===0){ list.innerHTML='<div class="no-batch">暂无历史数据<br>上传第一个批次开始使用</div>'; return; }
-  list.innerHTML = batches.slice().reverse().map(b=>`
-    <div class="batch-item ${b.id===currentBatchId?'active':''}" data-id="${b.id}">
-      <div class="b-name">${esc(b.name)}</div>
-      <div class="b-meta">${b.rows.length.toLocaleString('zh-CN')} 条 · ${new Date(b.uploadTime).toLocaleDateString('zh-CN')}</div>
-      <button class="batch-del" data-id="${b.id}" title="删除">×</button>
-    </div>`).join('');
-
-  list.querySelectorAll('.batch-item').forEach(el=>{
-    el.addEventListener('click', e=>{ if(e.target.classList.contains('batch-del')) return; currentBatchId=el.dataset.id; renderSidebar(); renderMainContent(); });
-  });
-  list.querySelectorAll('.batch-del').forEach(btn=>{
-    btn.addEventListener('click', async e=>{
-      e.stopPropagation();
-      const id=btn.dataset.id; const b=batches.find(x=>x.id===id); if(!b) return;
-      const ok=await openConfirmModal({ title:'删除批次', desc:`确定删除批次「${b.name}」吗？`, confirmText:'删除', isDanger:true });
-      if(!ok) return;
-      batches=batches.filter(x=>x.id!==id); saveBatches();
-      if(currentBatchId===id) currentBatchId=batches.length>0?batches[batches.length-1].id:null;
-      renderSidebar(); renderMainContent(); showToast('批次已删除');
-    });
-  });
-}
-
-// ==================== MAIN RENDER ====================
-function renderMainContent(){
-  const show = id => document.getElementById(id)?.classList.remove('hidden');
-  const hide = id => document.getElementById(id)?.classList.add('hidden');
-
-  if(!currentBatchId || batches.length===0){
-    show('empty-state');
-    ['trend-section','stat-cards','row-dist-lowrate','row-labels-subdim','table-section'].forEach(hide);
-    document.getElementById('current-batch-name').classList.add('hidden');
-    document.getElementById('export-btn-header').classList.add('hidden');
+  const count = document.getElementById('batch-count');
+  count.textContent = `${batches.length}个`;
+  if (!batches.length) {
+    list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-tertiary);font-size:12px">暂无批次</div>';
     return;
   }
-
-  hide('empty-state');
-  const batch = batches.find(b=>b.id===currentBatchId);
-  if(!batch) return;
-
-  document.getElementById('current-batch-name').textContent = batch.name;
-  document.getElementById('current-batch-name').classList.remove('hidden');
-  document.getElementById('export-btn-header').classList.remove('hidden');
-  ['stat-cards','row-dist-lowrate','row-labels-subdim','table-section'].forEach(show);
-
-  renderStatCards(batch.rows);
-  renderTrendChart();   // always show
-  show('trend-section');
-  renderOverallDistChart(batch.rows);
-  renderLowRateChart(batch.rows);
-  renderAllLabelsChart(batch.rows);
-  activeDimForSubdim = null;
-  activeFilter = null;
-  tableBaseRows = batch.rows;
-  renderAllSubdimPanel(batch.rows, null);
-  renderSubdimButtons(batch.rows);
-  tableCurrentPage=1; tableSearchText=''; tableSortCol='_overallScore'; tableSortDir='desc';
-  document.getElementById('table-search').value='';
-  renderDetailTable(batch.rows);
-}
-
-// ==================== STAT CARDS ====================
-function renderStatCards(rows){
-  const valid = rows.filter(r=>!isNaN(r._overallScore));
-  const avg = valid.length>0 ? valid.reduce((s,r)=>s+r._overallScore,0)/valid.length : 0;
-  const low = valid.length>0 ? valid.filter(r=>r._overallScore<=2).length/valid.length : 0;
-  const high = valid.length>0 ? valid.filter(r=>r._overallScore>=4).length/valid.length : 0;
-  document.getElementById('sc-total').textContent = rows.length.toLocaleString('zh-CN');
-  document.getElementById('sc-avg').textContent = fmtScore(avg);
-  document.getElementById('sc-low').textContent = fmtPct(low);
-  document.getElementById('sc-high').textContent = fmtPct(high);
-}
-
-// ==================== TREND CHART (always show ≥1 batch) ====================
-function renderTrendChart(){
-  destroyChart('trend');
-  const sorted = batches.slice().sort((a,b)=>a.uploadTime-b.uploadTime);
-  const hint = document.getElementById('trend-hint');
-  if(hint) hint.textContent = sorted.length < 2 ? '上传更多批次后可查看趋势对比' : '';
-  const labels = sorted.map(b=>b.name);
-  const avgs = sorted.map(b=>{
-    const v=b.rows.filter(r=>!isNaN(r._overallScore));
-    return v.length>0 ? parseFloat((v.reduce((s,r)=>s+r._overallScore,0)/v.length).toFixed(2)) : 0;
-  });
-  const lowRates = sorted.map(b=>{
-    const v=b.rows.filter(r=>!isNaN(r._overallScore));
-    return v.length>0 ? parseFloat((v.filter(r=>r._overallScore<=2).length/v.length*100).toFixed(1)) : 0;
-  });
-  const ctx = document.getElementById('trend-chart').getContext('2d');
-  charts['trend'] = new Chart(ctx,{
-    type:'line',
-    data:{ labels, datasets:[
-      { label:'平均整体分', data:avgs, borderColor:'#4e79a7', backgroundColor:'rgba(78,121,167,.12)', yAxisID:'y1', tension:.35, pointRadius:6, pointHoverRadius:8, fill:true },
-      { label:'低分率(%)', data:lowRates, borderColor:'#e15759', backgroundColor:'rgba(225,87,89,.08)', yAxisID:'y2', tension:.35, pointRadius:6, pointHoverRadius:8, fill:true, borderDash:[5,4] }
-    ]},
-    options:{
-      responsive:true, maintainAspectRatio:false,
-      interaction:{ mode:'index', intersect:false },
-      plugins:{ legend:{ position:'bottom', labels:{ font:{size:12}, padding:16, boxWidth:12 } } },
-      scales:{
-        y1:{ type:'linear', position:'left', min:0, max:5, ticks:{ font:{size:11} }, title:{ display:true, text:'整体分', font:{size:11} } },
-        y2:{ type:'linear', position:'right', min:0, ticks:{ callback:v=>v+'%', font:{size:11} }, grid:{drawOnChartArea:false}, title:{ display:true, text:'低分率', font:{size:11} } }
-      }
-    }
-  });
-}
-
-// ==================== OVERALL DIST CHART ====================
-function renderOverallDistChart(rows){
-  destroyChart('overallDist');
-  const binCounts = {};
-  SCORE_BINS.forEach(b=>{ binCounts[b]=0; });
-  rows.forEach(r=>{ const s=r._overallScore; if(!isNaN(s)){ const k=SCORE_BINS.find(b=>Math.abs(b-s)<0.01); if(k!==undefined) binCounts[k]++; } });
-  // Only show non-zero bins
-  const nonZero = SCORE_BINS.filter(b=>binCounts[b]>0);
-  const values  = nonZero.map(b=>binCounts[b]);
-  const colors  = nonZero.map(b=>b<=2?'#e15759': b<=3?'#f28e2b': b<=4?'#edc948':'#59a14f');
-  const total   = rows.filter(r=>!isNaN(r._overallScore)).length;
-  const ctx = document.getElementById('overall-dist-chart').getContext('2d');
-  charts['overallDist'] = new Chart(ctx,{
-    type:'doughnut',
-    data:{ labels:nonZero.map(b=>b+'分'), datasets:[{ data:values, backgroundColor:colors, borderWidth:2, borderColor:'#fff' }] },
-    options:{
-      responsive:true, maintainAspectRatio:false,
-      cutout:'55%',
-      plugins:{
-        legend:{ position:'right', labels:{ font:{size:11}, padding:10, boxWidth:12 } },
-        tooltip:{ callbacks:{ label:c=>` ${c.label}: ${c.raw.toLocaleString('zh-CN')} 条 (${total>0?(c.raw/total*100).toFixed(1):0}%)` }}
-      },
-      onClick(evt, elements){
-        if(!elements.length){
-          activeFilter=null;
-        } else {
-          const scoreVal=nonZero[elements[0].index];
-          activeFilter=(activeFilter&&activeFilter.type==='overall'&&Math.abs(activeFilter.score-scoreVal)<0.01) ? null : {type:'overall',score:scoreVal};
-        }
-        updateDetailPanel();
-        highlightPieSegment(nonZero);
-      }
-    }
-  });
-}
-
-function highlightPieSegment(nonZero){
-  const chart=charts['overallDist']; if(!chart) return;
-  const ds=chart.data.datasets[0];
-  const bins=nonZero||chart.data.labels.map(l=>parseFloat(l));
-  ds.borderWidth=bins.map(b=>(activeFilter&&activeFilter.type==='overall'&&Math.abs(activeFilter.score-b)<0.01)?4:2);
-  ds.borderColor=bins.map(b=>(activeFilter&&activeFilter.type==='overall'&&Math.abs(activeFilter.score-b)<0.01)?'#2d3748':'#fff');
-  chart.update();
-}
-
-// ==================== LOW RATE CHART ====================
-function renderLowRateChart(rows){
-  destroyChart('lowrate');
-  const total = rows.length;
-  const rates = SCORE_COLS.map(col=>{
-    const cnt = rows.filter(r=>{ const v=parseFloat(r[col]); return !isNaN(v)&&v<=2; }).length;
-    return parseFloat((cnt/total*100).toFixed(1));
-  });
-  const colors = rates.map(r=>r>=30?'#e15759': r>=15?'#f28e2b':'#59a14f');
-  const ctx = document.getElementById('lowrate-chart').getContext('2d');
-  charts['lowrate'] = new Chart(ctx,{
-    type:'bar',
-    data:{ labels:SCORE_COLS, datasets:[{ data:rates, backgroundColor:colors, borderWidth:0 }] },
-    options:{
-      indexAxis:'y',
-      responsive:true, maintainAspectRatio:false,
-      plugins:{
-        legend:{display:false},
-        tooltip:{ callbacks:{ label:c=>` 低分率: ${c.raw}%` }}
-      },
-      scales:{
-        x:{ min:0, max:100, ticks:{ callback:v=>v+'%', font:{size:11} }, grid:{color:'rgba(0,0,0,0.04)'},
-          afterDataLimits(scale){ scale.max = Math.min(100, Math.ceil((scale.max||10)*1.15)); }
-        },
-        y:{ ticks:{ font:{size:13}, padding:4 } }
-      },
-      onHover(evt, elements){ evt.native.target.style.cursor=elements.length?'pointer':'default'; },
-      onClick(evt, elements){
-        if(!elements.length){ activeFilter=null; }
-        else {
-          const dim=SCORE_COLS[elements[0].index];
-          activeFilter=(activeFilter&&activeFilter.type==='lowrate'&&activeFilter.dim===dim) ? null : {type:'lowrate',dim};
-        }
-        updateDetailPanel();
-        highlightLowRateBar();
-      }
-    }
-  });
-}
-
-function highlightLowRateBar(){
-  const chart=charts['lowrate']; if(!chart) return;
-  const ds=chart.data.datasets[0];
-  ds.borderWidth=SCORE_COLS.map(dim=>(activeFilter&&activeFilter.type==='lowrate'&&activeFilter.dim===dim)?3:0);
-  ds.borderColor=SCORE_COLS.map(dim=>(activeFilter&&activeFilter.type==='lowrate'&&activeFilter.dim===dim)?'#2d3748':'transparent');
-  chart.update();
-}
-
-// ==================== ALL LABELS GROUPED BAR CHART ====================
-function renderAllLabelsChart(rows, focusDim){
-  destroyChart('allLabels');
-  const total = rows.length;
-
-  // If a specific dimension is focused (from subdim selection), show only that dim
-  const dimsToShow = focusDim ? SCORE_COLS.filter(c=>c===focusDim) : SCORE_COLS;
-
-  const datasets = dimsToShow.map((col) => {
-    const ci = SCORE_COLS.indexOf(col);
-    const binCounts = SCORE_BINS.map(b => {
-      return rows.filter(r => { const v=parseFloat(r[col]); return !isNaN(v) && Math.abs(v-b)<0.01; }).length;
-    });
-    return {
-      label: col,
-      data: binCounts,
-      backgroundColor: DIM_COLORS[ci],
-      borderWidth: 0,
-    };
-  });
-
-  const ctx = document.getElementById('all-labels-chart').getContext('2d');
-  charts['allLabels'] = new Chart(ctx, {
-    type:'bar',
-    data:{ labels: SCORE_BINS.map(String), datasets },
-    options:{
-      responsive:true, maintainAspectRatio:false,
-      plugins:{
-        legend:{ position:'bottom', labels:{ font:{size:12}, padding:12, boxWidth:12 },
-          onClick(e, legendItem, legend){
-            // Default toggle + re-render subdim for clicked dim
-            Chart.defaults.plugins.legend.onClick.call(legend.chart, e, legendItem, legend);
-          }
-        },
-        tooltip:{ callbacks:{
-          label: c => ` ${c.dataset.label}: ${c.raw.toLocaleString('zh-CN')} 条 (${total>0?(c.raw/total*100).toFixed(1):0}%)`
-        }}
-      },
-      scales:{
-        x:{ title:{ display:true, text:'分数', font:{size:11} }, ticks:{ font:{size:11}, maxRotation:0 } },
-        y:{ beginAtZero:true, ticks:{ font:{size:11} } }
-      },
-      onClick(evt, elements){
-        if(!elements.length) return;
-        const dimIdx = elements[0].datasetIndex;
-        const binIdx = elements[0].index;
-        const dim = SCORE_COLS[dimIdx];
-        const score = SCORE_BINS[binIdx];
-        const batch = batches.find(b=>b.id===currentBatchId);
-        if(!batch) return;
-        // Toggle subdim panel
-        activeDimForSubdim = (activeDimForSubdim===dim) ? null : dim;
-        renderAllSubdimPanel(batch.rows, activeDimForSubdim);
-        renderSubdimButtons(batch.rows);
-        // Filter logic (toggle same bin clears)
-        activeFilter=(activeFilter&&activeFilter.type==='label'&&activeFilter.dim===dim&&Math.abs(activeFilter.score-score)<0.01) ? null : {type:'label',dim,score};
-        updateDetailPanel();
-      }
-    }
-  });
-}
-
-// ==================== SUB-DIM DATA ====================
-function getSubDimData(rows, label){
-  const l2Col = label+'_level2';
-  const l3Col = label+'_level3';
-  const hasL2 = rows.some(r => r[l2Col] != null && String(r[l2Col]).trim() !== '');
-  if(!hasL2) return null;
-  const result = {};
-
-  // Seed predefined L2/L3 structure from the map (so all tiers show even with 0 count)
-  const tierDefs = NEW_FORMAT_SUBDIM_MAP[label] || [];
-  tierDefs.forEach(tier => {
-    if(!result[tier.score]) result[tier.score] = { count:0, l3:{} };
-    (tier.l3 || []).forEach(l3label => {
-      if(!(l3label in result[tier.score].l3)) result[tier.score].l3[l3label] = 0;
-    });
-  });
-
-  rows.forEach(r => {
-    const l2 = String(r[l2Col]||'').trim(); if(!l2) return;
-    if(!result[l2]) result[l2]={ count:0, l3:{} };
-    result[l2].count++;
-    const l3Raw = String(r[l3Col]||'').trim();
-    if(l3Raw){
-      l3Raw.split('；').forEach(seg => {
-        const seg2 = seg.trim();
-        if(seg2) result[l2].l3[seg2] = (result[l2].l3[seg2]||0)+1;
-      });
-    }
-  });
-
-  // Sort: tiers in predefined order first, then by count desc
-  const tierOrder = tierDefs.map(t => t.score);
-  const sorted = Object.entries(result).sort((a,b) => {
-    const ia = tierOrder.indexOf(a[0]), ib = tierOrder.indexOf(b[0]);
-    if(ia !== -1 && ib !== -1) return ia - ib;
-    if(ia !== -1) return -1;
-    if(ib !== -1) return 1;
-    return b[1].count - a[1].count;
-  });
-  const out = {};
-  sorted.forEach(([k,v])=>{ v.pct=(v.count/rows.length*100).toFixed(1); out[k]=v; });
-  return out;
-}
-
-// ==================== SUBDIM DIMENSION BUTTONS ====================
-function renderSubdimButtons(rows){
-  const container = document.getElementById('subdim-dim-btns');
-  if(!container) return;
-  const availDims = SCORE_COLS.filter(dim=>rows.some(r=>String(r[dim+'_level2']||'').trim()!==''));
-  if(availDims.length===0){
-    container.innerHTML='<span style="font-size:12px;color:var(--text-muted)">暂无子维度数据</span>';
-    return;
-  }
-  container.innerHTML = availDims.map(dim=>`
-    <button class="subdim-dim-btn ${activeDimForSubdim===dim?'active':''}" data-dim="${esc(dim)}">${esc(dim)}</button>
-  `).join('');
-  container.querySelectorAll('.subdim-dim-btn').forEach(btn=>{
-    btn.addEventListener('click',()=>{
-      const dim=btn.dataset.dim;
-      activeDimForSubdim=(activeDimForSubdim===dim)?null:dim;
-      const batch=batches.find(b=>b.id===currentBatchId);
-      if(batch){
-        renderSubdimButtons(batch.rows);
-        renderAllSubdimPanel(batch.rows, activeDimForSubdim);
-        renderAllLabelsChart(batch.rows, activeDimForSubdim);  // focus left chart
-      }
-    });
-  });
-}
-
-// ==================== ALL SUBDIM PANEL ====================
-function renderAllSubdimPanel(rows, activeDim){
-  const container = document.getElementById('all-subdim-panel');
-  container.innerHTML = '';
-
-  if(!activeDim){
-    container.innerHTML = '<div class="subdim-empty" style="padding:40px 16px">点击上方按钮或图表中的维度色块<br>查看该维度的子维度分布</div>';
-    return;
-  }
-
-  const data = getSubDimData(rows, activeDim);
-  if(!data){
-    container.innerHTML = `<div class="subdim-empty">「${esc(activeDim)}」暂无子维度数据</div>`;
-    return;
-  }
-
-  const entries = Object.entries(data);
-  const maxCount = entries.length>0 ? entries[0][1].count : 1;
-
-  const itemsHtml = entries.map(([l2, info])=>{
-    const barW = maxCount>0 ? (info.count/maxCount*100).toFixed(1) : 0;
-    const l3Entries = Object.entries(info.l3).sort((a,b)=>b[1]-a[1]);
-    const hasL3 = l3Entries.length>0;
-
-    // Show expand icon if there are any l3 entries (including 0-count predefined)
-    const expandIcon = hasL3
-      ? `<span class="l2-expand-icon">▶</span>`
-      : `<span class="l2-expand-icon" style="opacity:0">▶</span>`;
-
-    const l3Html = hasL3 ? `<div class="l3-list">
-      ${l3Entries.map(([l3,cnt])=>{
-        const l3W = info.count>0 ? (cnt/info.count*100).toFixed(1) : 0;
-        const isL3Active = activeFilter&&activeFilter.type==='l3'&&activeFilter.dim===activeDim&&activeFilter.l2===l2&&activeFilter.l3===l3;
-        const zeroStyle = cnt===0 ? 'opacity:0.45' : '';
-        return `<div class="l3-item ${isL3Active?'filter-active':''}" style="${zeroStyle}" data-l3="${esc(l3)}">
-          <span class="l3-name l3-filter-target" title="${esc(l3)}">${esc(l3)}</span>
-          <div class="l3-bar-bg"><div class="l3-bar-fill" style="width:${l3W}%"></div></div>
-          <span class="l3-stat">${cnt.toLocaleString('zh-CN')} (${(cnt/rows.length*100).toFixed(1)}%)</span>
-        </div>`;
-      }).join('')}
-    </div>` : '';
-
-    const isFilterActive = (activeFilter&&activeFilter.type==='subdim'&&activeFilter.l2===l2) ||
-                           (activeFilter&&activeFilter.type==='l3'&&activeFilter.l2===l2&&activeFilter.dim===activeDim);
-    return `<div class="l2-item">
-      <div class="l2-bar-row ${isFilterActive?'filter-active':''}" ${hasL3?'data-has-l3="1"':''} data-l2="${esc(l2)}">
-        ${expandIcon}
-        <span class="l2-name l2-filter-target" title="${esc(l2)}">${esc(l2)}</span>
-        <div class="l2-bar-bg"><div class="l2-bar-fill" style="width:${barW}%"></div></div>
-        <span class="l2-stat">${info.count.toLocaleString('zh-CN')} (${info.pct}%)</span>
+  list.innerHTML = batches.map(b => {
+    const isActive = b.id === activeBatchId;
+    return `
+    <div class="batch-item ${isActive ? 'active' : ''}" data-id="${b.id}" onclick="selectBatch('${b.id}')">
+      <div class="batch-dot"></div>
+      <div class="batch-info">
+        <div class="batch-name" id="bname-${b.id}" ondblclick="editBatchName('${b.id}',event)">${escHtml(b.name)}</div>
+        <div class="batch-meta">${b.time || ''} &middot; ${b.rows.length}条</div>
       </div>
-      ${l3Html}
+      <button class="batch-del" onclick="deleteBatch('${b.id}',event)" title="删除">&#215;</button>
     </div>`;
   }).join('');
+}
 
-  const dimColor = DIM_COLORS[SCORE_COLS.indexOf(activeDim)] || '#4e79a7';
-  container.innerHTML = `
-    <div style="font-size:13px;font-weight:600;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid ${dimColor};color:${dimColor}">
-      ${esc(activeDim)} · 子维度分布 <span style="font-size:11px;color:var(--text-muted);font-weight:400">（点击标签名筛选数据）</span>
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function selectBatch(id) {
+  if (activeBatchId === id) return;
+  activeBatchId = id;
+  chartFilter = null;
+  sortConfig = { col: null, dir: 'asc' };
+  searchQuery = '';
+  currentPage = 1;
+  expandedRows.clear();
+  renderAll();
+}
+
+function deleteBatch(id, e) {
+  e && e.stopPropagation();
+  batches = batches.filter(b => b.id !== id);
+  if (activeBatchId === id) {
+    activeBatchId = batches.length ? batches[0].id : null;
+  }
+  chartFilter = null;
+  currentPage = 1;
+  saveState();
+  renderAll();
+  showToast('批次已删除');
+}
+
+function editBatchName(id, e) {
+  e.stopPropagation();
+  const b = batches.find(x => x.id === id);
+  if (!b) return;
+  const el = document.getElementById('bname-' + id);
+  const cur = b.name;
+  el.innerHTML = `<input class="batch-name-edit" value="${escHtml(cur)}" id="edit-input-${id}" onclick="event.stopPropagation()">`;
+  const inp = document.getElementById('edit-input-' + id);
+  inp.focus(); inp.select();
+  function done() {
+    const nv = inp.value.trim() || cur;
+    b.name = nv;
+    saveState();
+    renderSidebar();
+  }
+  inp.addEventListener('blur', done);
+  inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') done(); if (ev.key === 'Escape') { renderSidebar(); } });
+}
+
+// ===== CONTENT =====
+function renderContent() {
+  const root = document.getElementById('content-root');
+  if (!activeBatchId || !batches.length) {
+    root.innerHTML = `
+    <div id="empty-state">
+      <div class="empty-icon">&#128202;</div>
+      <h3>暂无数据</h3>
+      <p>请在左侧拖拽或上传 CSV 文件开始分析</p>
+    </div>`;
+    return;
+  }
+  const batch = batches.find(b => b.id === activeBatchId);
+  if (!batch) return;
+
+  destroyCharts();
+
+  root.innerHTML = buildContentHTML(batch);
+
+  // Init charts
+  setTimeout(() => {
+    renderDistChart(batch);
+    renderRadarChart(batch);
+    renderTrendChart();
+    renderTrendBatchSelector();
+  }, 0);
+
+  // Bind table events
+  bindTableEvents(batch);
+}
+
+function buildContentHTML(batch) {
+  const rows = batch.rows;
+  const scoreCols = batch.scoreCols;
+  const scores = rows.map(r => calcOverallScore(r, scoreCols, batch.isNewFormat)).filter(v => !isNaN(v));
+  const avg = scores.length ? (scores.reduce((a,b)=>a+b,0)/scores.length) : 0;
+  const lowCount = scores.filter(v => v < 3).length;
+  const highCount = scores.filter(v => v >= 4).length;
+  const lowRate = scores.length ? (lowCount / scores.length * 100) : 0;
+  const highRate = scores.length ? (highCount / scores.length * 100) : 0;
+
+  // Build dim stats
+  const dimStats = scoreCols.map(col => {
+    const vals = rows.map(r => parseFloat(r[col])).filter(v => !isNaN(v));
+    const colAvg = vals.length ? (vals.reduce((a,b)=>a+b,0)/vals.length) : 0;
+    return { col, avg: colAvg.toFixed(2) };
+  });
+
+  // Format badge
+  const fmtBadge = batch.isNewFormat
+    ? '<span class="tag tag-new">新格式</span>'
+    : '<span class="tag tag-old">老格式</span>';
+
+  return `
+  <!-- Batch Header -->
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+    <h2 style="font-size:18px;font-weight:700;color:var(--text)">${escHtml(batch.name)}</h2>
+    ${fmtBadge}
+    <span class="tag">${batch.time || '未知时间'}</span>
+    <span class="tag">${rows.length} 条数据</span>
+  </div>
+
+  <!-- Stat Cards -->
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-card-label">&#128200; 数据总量</div>
+      <div class="stat-card-value">${rows.length}</div>
+      <div class="stat-card-sub">条记录</div>
     </div>
-    ${entries.length===0 ? '<div class="subdim-empty">暂无子维度数据</div>' : itemsHtml}
+    <div class="stat-card">
+      <div class="stat-card-label">&#9733; 平均整体分</div>
+      <div class="stat-card-value ${avg >= 3.5 ? 'good' : avg >= 2.5 ? 'warn' : 'bad'}">${avg.toFixed(2)}</div>
+      <div class="stat-card-sub">满分5分</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card-label">&#9660; 低分率（&lt;3）</div>
+      <div class="stat-card-value ${lowRate > 30 ? 'bad' : lowRate > 15 ? 'warn' : 'good'}">${lowRate.toFixed(1)}%</div>
+      <div class="stat-card-sub">${lowCount} 条</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card-label">&#9650; 高质率（&ge;4）</div>
+      <div class="stat-card-value ${highRate >= 50 ? 'good' : highRate >= 30 ? 'warn' : 'bad'}">${highRate.toFixed(1)}%</div>
+      <div class="stat-card-sub">${highCount} 条</div>
+    </div>
+    ${dimStats.map(d => `
+    <div class="stat-card">
+      <div class="stat-card-label">&#128198; ${escHtml(d.col)}</div>
+      <div class="stat-card-value ${parseFloat(d.avg)>=3.5?'good':parseFloat(d.avg)>=2.5?'warn':'bad'}">${d.avg}</div>
+      <div class="stat-card-sub">维度平均分</div>
+    </div>`).join('')}
+  </div>
+
+  <!-- Charts Row -->
+  <div class="charts-row">
+    <div class="card">
+      <div class="card-header">
+        <h3>分数分布</h3>
+        ${chartFilter ? `<span class="filter-badge" onclick="clearFilter()">已过滤: ${escHtml(String(chartFilter.value))} &#215;</span>` : ''}
+      </div>
+      <div class="card-body">
+        <div class="chart-wrap"><canvas id="chart-dist"></canvas></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>各维度平均分</h3></div>
+      <div class="card-body">
+        <div class="chart-wrap"><canvas id="chart-radar"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Trend Card -->
+  <div class="card" id="trend-card">
+    <div class="card-header">
+      <h3>历史趋势对比</h3>
+      <div class="card-header-actions">
+        <div id="trend-metric-btns" class="trend-metric-btns">
+          <button class="metric-btn ${trendMetric==='avg'?'active':''}" data-metric="avg" onclick="setTrendMetric('avg')">平均整体分</button>
+          <button class="metric-btn ${trendMetric==='lowrate'?'active':''}" data-metric="lowrate" onclick="setTrendMetric('lowrate')">低分率</button>
+          <button class="metric-btn ${trendMetric==='highrate'?'active':''}" data-metric="highrate" onclick="setTrendMetric('highrate')">高质率</button>
+          ${getDynamicMetricBtns()}
+        </div>
+      </div>
+    </div>
+    <div class="card-header" style="padding-top:8px;padding-bottom:8px;border-top:none">
+      <div id="trend-batch-selector" class="batch-selector-wrap">
+        <span class="batch-sel-label">批次：</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="trend-chart-wrap"><canvas id="chart-trend"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Table Section -->
+  ${buildTableHTML(batch)}
   `;
-
-  // L3 expand: click the row (but not on filter targets)
-  container.querySelectorAll('.l2-bar-row[data-has-l3]').forEach(rowEl=>{
-    rowEl.addEventListener('click', e=>{
-      if(e.target.classList.contains('l2-filter-target')) return;
-      const icon = rowEl.querySelector('.l2-expand-icon');
-      const l3List = rowEl.closest('.l2-item').querySelector('.l3-list');
-      if(!l3List) return;
-      l3List.classList.toggle('open');
-      icon.classList.toggle('open');
-    });
-  });
-
-  // Filter: click L2 label text
-  container.querySelectorAll('.l2-filter-target').forEach(label=>{
-    label.addEventListener('click', e=>{
-      e.stopPropagation();
-      const l2Val = label.closest('.l2-bar-row').dataset.l2;
-      activeFilter=(activeFilter&&activeFilter.type==='subdim'&&activeFilter.l2===l2Val&&activeFilter.dim===activeDim)
-        ? null : {type:'subdim', dim:activeDim, l2:l2Val};
-      updateDetailPanel();
-      renderAllSubdimPanel(rows, activeDim);
-    });
-  });
-
-  // Filter: click L3 label text
-  container.querySelectorAll('.l3-filter-target').forEach(label=>{
-    label.addEventListener('click', e=>{
-      e.stopPropagation();
-      const l3Val = label.closest('.l3-item').dataset.l3;
-      const l2Val = label.closest('.l2-item').querySelector('.l2-bar-row').dataset.l2;
-      activeFilter=(activeFilter&&activeFilter.type==='l3'&&activeFilter.l3===l3Val&&activeFilter.l2===l2Val&&activeFilter.dim===activeDim)
-        ? null : {type:'l3', dim:activeDim, l2:l2Val, l3:l3Val};
-      updateDetailPanel();
-      renderAllSubdimPanel(rows, activeDim);
-    });
-  });
 }
 
-// ==================== DATA TABLE ====================
-function renderDetailTable(filteredRows){
-  const badge = document.getElementById('detail-filter-badge');
-  const clearBtn = document.getElementById('detail-clear-btn');
-  if(activeFilter){
-    badge.textContent = describeFilter(activeFilter) + ` · ${filteredRows.length.toLocaleString('zh-CN')} 条`;
-    badge.classList.remove('hidden');
-    clearBtn.classList.remove('hidden');
-  } else {
-    badge.classList.add('hidden');
-    clearBtn.classList.add('hidden');
-  }
-  tableCurrentPage = 1;
-  renderTable(filteredRows);
+function getDynamicMetricBtns() {
+  // Collect all unique scoreCols across batches
+  const allCols = new Set();
+  batches.forEach(b => (b.scoreCols || []).forEach(c => allCols.add(c)));
+  return Array.from(allCols).map(c =>
+    `<button class="metric-btn ${trendMetric===c?'active':''}" data-metric="${escHtml(c)}" onclick="setTrendMetric('${c.replace(/'/g,"\\'")}')">
+      ${escHtml(c)}
+    </button>`
+  ).join('');
 }
 
-function renderTable(allRows){
-  const search = tableSearchText.toLowerCase();
-  let filtered = search
-    ? allRows.filter(r=>Object.values(r).some(v=>String(v||'').toLowerCase().includes(search)))
-    : allRows;
-
-  filtered = filtered.slice().sort((a,b)=>{
-    let va=a[tableSortCol], vb=b[tableSortCol];
-    const na=parseFloat(va), nb=parseFloat(vb);
-    if(!isNaN(na)&&!isNaN(nb)){ va=na; vb=nb; }
-    if(va<vb) return tableSortDir==='asc'?-1:1;
-    if(va>vb) return tableSortDir==='asc'?1:-1;
-    return 0;
+// ===== CHARTS =====
+function destroyCharts() {
+  Object.keys(charts).forEach(k => {
+    try { charts[k].destroy(); } catch(e) {}
   });
-
-  tableFilteredRows = filtered;
-  const total = filtered.length;
-  const totalPages = Math.max(1, Math.ceil(total/PAGE_SIZE));
-  if(tableCurrentPage>totalPages) tableCurrentPage=1;
-  const start=(tableCurrentPage-1)*PAGE_SIZE;
-  const page=filtered.slice(start, start+PAGE_SIZE);
-
-  const batch = batches.find(b=>b.id===currentBatchId);
-  if(!batch) return;
-
-  // Fixed column definitions — show column regardless of whether field exists
-  // (cells will show — when value missing)
-  const cols = [
-    {key:'任务编号',          label:'编号',     type:'id'},
-    {key:'_overallScore',     label:'整体分',   type:'overall'},
-    {key:'input.cut_off_url', label:'视频',     type:'link'},
-    {key:'结果预览',          label:'详情链接', type:'link'},
-    {key:'标注人',            label:'标注人',   type:'text'},
-    {key:'标注时间',          label:'标注时间', type:'text'},
-    {key:'当前节点',          label:'验收情况', type:'text'},
-    {key:'是否有效',          label:'是否有效', type:'valid'},
-    {key:'caption问题',       label:'caption问题', type:'text'},
-    ...SCORE_COLS.map(c=>({key:c, label:c, type:'score'})),
-  ];
-
-  const thHtml = cols.map(({key,label})=>{
-    let cls=''; if(tableSortCol===key) cls=tableSortDir==='asc'?'sort-asc':'sort-desc';
-    return `<th class="${cls}" data-col="${esc(key)}">${esc(label)}</th>`;
-  }).join('');
-  document.getElementById('table-head').innerHTML=`<tr>${thHtml}</tr>`;
-
-  document.getElementById('table-head').querySelectorAll('th').forEach(th=>{
-    th.addEventListener('click',()=>{
-      if(tableSortCol===th.dataset.col){ tableSortDir=tableSortDir==='asc'?'desc':'asc'; }
-      else { tableSortCol=th.dataset.col; tableSortDir='desc'; }
-      tableCurrentPage=1; renderTable(tableBaseRows||batch.rows);
-    });
-  });
-
-  const tbody = page.map(row=>{
-    const tds = cols.map(({key,type})=>{
-      const val = row[key];
-      if(type==='overall'){
-        const s=row._overallScore; if(isNaN(s)||s==null) return '<td>—</td>';
-        let cls='score-chip ';
-        if(s<=1) cls+='score-1'; else if(s<=2) cls+='score-low'; else if(s<4) cls+='score-mid'; else cls+='score-high';
-        return `<td><span class="${cls}">${fmtScore(s)}</span></td>`;
-      }
-      if(type==='score'){
-        const v=parseFloat(val); if(isNaN(v)) return `<td>—</td>`;
-        let style=''; if(v<=2) style='color:#e15759;font-weight:600'; else if(v>=4) style='color:#59a14f;font-weight:600';
-        return `<td style="${style}">${v}</td>`;
-      }
-      if(type==='link'){
-        const url = String(val||'').trim();
-        if(!url) return '<td>—</td>';
-        return `<td><a href="${esc(url)}" target="_blank" style="color:var(--primary);text-decoration:none;font-size:12px" title="${esc(url)}">🔗 打开</a></td>`;
-      }
-      if(type==='id'){
-        // trim trailing tabs/spaces common in this CSV
-        return `<td style="font-size:11px;color:var(--text-muted)">${esc(String(val||'').trim())}</td>`;
-      }
-      if(type==='valid'){
-        const v=String(val||'').trim();
-        const color = v==='是'?'#059669': v==='否'?'#dc2626':'var(--text-muted)';
-        return `<td style="color:${color};font-weight:600">${esc(v)||'—'}</td>`;
-      }
-      return `<td>${esc(String(val||'').trim())}</td>`;
-    }).join('');
-    return `<tr>${tds}</tr>`;
-  }).join('');
-  document.getElementById('table-body').innerHTML = tbody || '<tr><td colspan="99" style="text-align:center;padding:24px;color:var(--text-muted)">无匹配数据</td></tr>';
-
-  renderPagination(total, totalPages, allRows);
+  charts = {};
 }
 
-function renderPagination(total, totalPages, allRows){
-  const pag=document.getElementById('pagination');
-  const start=(tableCurrentPage-1)*PAGE_SIZE+1;
-  const end=Math.min(tableCurrentPage*PAGE_SIZE,total);
-
-  let pages=[];
-  if(totalPages<=7){ for(let i=1;i<=totalPages;i++) pages.push(i); }
-  else {
-    pages=[1];
-    if(tableCurrentPage>3) pages.push('...');
-    for(let i=Math.max(2,tableCurrentPage-1);i<=Math.min(totalPages-1,tableCurrentPage+1);i++) pages.push(i);
-    if(tableCurrentPage<totalPages-2) pages.push('...');
-    pages.push(totalPages);
-  }
-
-  const pageButtons=pages.map(p=>{
-    if(p==='...') return `<span style="padding:4px 6px;color:var(--text-muted)">…</span>`;
-    return `<button class="page-btn ${p===tableCurrentPage?'active':''}" data-p="${p}">${p}</button>`;
-  }).join('');
-
-  pag.innerHTML=`
-    <button class="page-btn" id="pg-prev" ${tableCurrentPage<=1?'disabled':''}>‹ 上一页</button>
-    ${pageButtons}
-    <button class="page-btn" id="pg-next" ${tableCurrentPage>=totalPages?'disabled':''}>下一页 ›</button>
-    <span id="page-info">${total===0?'无结果':`第 ${start}-${end} 条，共 ${total.toLocaleString('zh-CN')} 条`}</span>
-  `;
-
-  pag.querySelectorAll('.page-btn[data-p]').forEach(btn=>{
-    btn.addEventListener('click',()=>{ tableCurrentPage=parseInt(btn.dataset.p); renderTable(allRows); });
-  });
-  pag.querySelector('#pg-prev')?.addEventListener('click',()=>{ if(tableCurrentPage>1){ tableCurrentPage--; renderTable(allRows); }});
-  pag.querySelector('#pg-next')?.addEventListener('click',()=>{ if(tableCurrentPage<totalPages){ tableCurrentPage++; renderTable(allRows); }});
-}
-
-document.getElementById('table-search').addEventListener('input', e=>{
-  tableSearchText=e.target.value; tableCurrentPage=1;
-  const batch=batches.find(b=>b.id===currentBatchId);
-  if(batch) renderTable(tableBaseRows||batch.rows);
-});
-
-// ==================== UPLOAD INIT ====================
-function initUpload(){
-  const dropZone=document.getElementById('drop-zone');
-  const triggerUpload=()=>{ const fi=document.createElement('input'); fi.type='file'; fi.accept='.csv,text/csv'; fi.onchange=e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); }; fi.click(); };
-  if(dropZone){
-    dropZone.addEventListener('click', e=>{ if(e.target.tagName!=='INPUT') triggerUpload(); });
-    dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('drag-over');});
-    dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('drag-over'));
-    dropZone.addEventListener('drop',e=>{ e.preventDefault(); dropZone.classList.remove('drag-over'); if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
-  }
-  document.getElementById('upload-btn-header').addEventListener('click', triggerUpload);
-  document.getElementById('export-btn-header').addEventListener('click', exportShareFile);
-  document.getElementById('detail-clear-btn').addEventListener('click', ()=>{
-    activeFilter=null;
-    const batch=batches.find(b=>b.id===currentBatchId);
-    if(batch){
-      renderAllLabelsChart(tableBaseRows||batch.rows, activeDimForSubdim);
-      renderDetailTable(tableBaseRows||batch.rows);
-      highlightPieSegment([]);
-      highlightLowRateBar();
-      if(activeDimForSubdim) renderAllSubdimPanel(batch.rows, activeDimForSubdim);
+function renderDistChart(batch) {
+  const canvas = document.getElementById('chart-dist');
+  if (!canvas) return;
+  const rows = batch.rows;
+  const scoreCols = batch.scoreCols;
+  const scores = rows.map(r => calcOverallScore(r, scoreCols, batch.isNewFormat)).filter(v => !isNaN(v));
+  // Bins: [1,1.5), [1.5,2), [2,2.5), [2.5,3), [3,3.5), [3.5,4), [4,4.5), [4.5,5]
+  const bins = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
+  const labels = ['1-1.5', '1.5-2', '2-2.5', '2.5-3', '3-3.5', '3.5-4', '4-4.5', '4.5-5'];
+  const counts = Array(labels.length).fill(0);
+  scores.forEach(s => {
+    for (let i = 0; i < bins.length - 1; i++) {
+      if (s >= bins[i] && (s < bins[i+1] || (i === bins.length-2 && s <= bins[i+1]))) {
+        counts[i]++;
+        break;
+      }
     }
   });
-  document.addEventListener('dragover', e=>e.preventDefault());
-  document.addEventListener('drop', e=>{
-    e.preventDefault();
-    const file=e.dataTransfer?.files?.[0];
-    if(file&&(file.name.endsWith('.csv')||file.type.includes('csv'))) handleFile(file);
+  const barColors = labels.map((_, i) => {
+    const mid = (bins[i] + bins[i+1]) / 2;
+    if (mid >= 3.5) return '#52c41a';
+    if (mid >= 2.5) return '#faad14';
+    return '#ff4d4f';
+  });
+  charts['dist'] = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: '数量',
+        data: counts,
+        backgroundColor: barColors,
+        borderRadius: 4,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${ctx.parsed.y} 条 (${scores.length ? (ctx.parsed.y/scores.length*100).toFixed(1) : 0}%)`
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, grid: { color: '#f0f0f0' } }
+      },
+      onClick(event, elements) {
+        if (!elements.length) return;
+        const idx = elements[0].index;
+        chartFilter = { type: 'dist', label: labels[idx], min: bins[idx], max: bins[idx+1] };
+        currentPage = 1;
+        renderTableSection(batches.find(b => b.id === activeBatchId));
+        // Update filter badge
+        const batchNow = batches.find(b => b.id === activeBatchId);
+        const header = canvas.closest('.card').querySelector('.card-header');
+        if (header) {
+          let badge = header.querySelector('.filter-badge');
+          if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'filter-badge';
+            badge.onclick = clearFilter;
+            header.appendChild(badge);
+          }
+          badge.innerHTML = `已过滤: ${escHtml(labels[idx])} &#215;`;
+        }
+      }
+    }
   });
 }
 
-// ==================== EXPORT SHARE ====================
-function exportShareFile(){
-  if(batches.length===0){ showError('没有可导出的数据'); return; }
-
-  // Read the current HTML source, then inject batches data
-  const xhr = new XMLHttpRequest();
-  xhr.open('GET', location.href, false); // sync read self
-  try { xhr.send(); } catch(e){
-    // file:// protocol may block XHR; fall back to inline template
-    exportShareFallback(); return;
+function renderRadarChart(batch) {
+  const canvas = document.getElementById('chart-radar');
+  if (!canvas) return;
+  const rows = batch.rows;
+  const scoreCols = batch.scoreCols;
+  if (!scoreCols.length) {
+    canvas.parentElement.innerHTML = '<div class="no-data">无维度数据</div>';
+    return;
   }
-  if(xhr.status !== 200 && xhr.status !== 0){ exportShareFallback(); return; }
-
-  let src = xhr.responseText;
-
-  // Remove any previously injected SHARE_DATA block
-  src = src.replace(/\/\* ===== SHARE_DATA_START ===== \*\/[\s\S]*?\/\* ===== SHARE_DATA_END ===== \*\//g, '');
-
-  // Inject before init()
-  const injection = `/* ===== SHARE_DATA_START ===== */
-const _SHARE_BATCHES = ${JSON.stringify(batches)};
-/* ===== SHARE_DATA_END ===== */
-`;
-  src = src.replace('// ==================== INIT ====================', injection + '// ==================== INIT ====================');
-
-  // Patch init() to load from _SHARE_BATCHES instead of localStorage, and hide upload/export buttons
-  src = src.replace(
-    'function init(){\n  loadBatches();\n  if(batches.length>0) currentBatchId=batches[batches.length-1].id;',
-    `function init(){\n  if(typeof _SHARE_BATCHES!=='undefined'&&_SHARE_BATCHES.length>0){\n    batches=_SHARE_BATCHES;\n    currentBatchId=batches[batches.length-1].id;\n    document.getElementById('upload-btn-header').style.display='none';\n    document.getElementById('export-btn-header').style.display='none';\n  } else {\n    loadBatches();\n    if(batches.length>0) currentBatchId=batches[batches.length-1].id;\n  }`
-  );
-
-  // Determine filename from batch names
-  const names = batches.map(b=>b.name).join('_');
-  const safeName = names.replace(/[\/\\:*?"<>|]/g,'').slice(0,60);
-  downloadHtml(src, `数据质量报告_${safeName}.html`);
-  showToast(`已导出分享版，包含 ${batches.length} 个批次`);
+  const avgs = scoreCols.map(c => {
+    const vals = rows.map(r => parseFloat(r[c])).filter(v => !isNaN(v));
+    return vals.length ? parseFloat((vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(2)) : 0;
+  });
+  charts['radar'] = new Chart(canvas, {
+    type: 'radar',
+    data: {
+      labels: scoreCols,
+      datasets: [{
+        label: '平均分',
+        data: avgs,
+        backgroundColor: 'rgba(22,119,255,0.12)',
+        borderColor: '#1677ff',
+        pointBackgroundColor: '#1677ff',
+        borderWidth: 2,
+        pointRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        r: {
+          min: 0, max: 5,
+          ticks: { stepSize: 1, font: { size: 11 } },
+          grid: { color: '#f0f0f0' },
+          pointLabels: { font: { size: 12 } }
+        }
+      },
+      plugins: { legend: { display: false } }
+    }
+  });
 }
 
-function exportShareFallback(){
-  // Simpler fallback: just serialize batches as JSON for user to send separately
-  showError('当前环境无法自动嵌入数据。请通过服务器访问平台后再导出，或直接发送 localStorage 数据。');
+// ===== TREND CHART =====
+function getTrendData() {
+  const selected = trendSelectedBatches;
+  const batchesForTrend = batches.filter(b => !selected || selected.includes(b.id));
+  const sorted = [...batchesForTrend].sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+
+  return sorted.map(b => {
+    const rows = b.rows;
+    const scoreCols = b.scoreCols;
+    const scores = rows.map(r => calcOverallScore(r, scoreCols, b.isNewFormat)).filter(v => !isNaN(v));
+
+    let value;
+    if (trendMetric === 'avg') {
+      value = scores.length ? parseFloat((scores.reduce((a,v)=>a+v,0)/scores.length).toFixed(3)) : null;
+    } else if (trendMetric === 'lowrate') {
+      value = scores.length ? parseFloat((scores.filter(v=>v<3).length/scores.length*100).toFixed(1)) : null;
+    } else if (trendMetric === 'highrate') {
+      value = scores.length ? parseFloat((scores.filter(v=>v>=4).length/scores.length*100).toFixed(1)) : null;
+    } else {
+      // Dimension metric
+      const dimVals = rows.map(r => parseFloat(r[trendMetric])).filter(v => !isNaN(v));
+      value = dimVals.length ? parseFloat((dimVals.reduce((a,v)=>a+v,0)/dimVals.length).toFixed(3)) : null;
+    }
+
+    return { label: b.name, time: b.time || b.name, value };
+  });
 }
 
-function downloadHtml(content, filename){
-  const blob = new Blob([content], { type:'text/html;charset=utf-8' });
+function renderTrendChart() {
+  const canvas = document.getElementById('chart-trend');
+  if (!canvas) return;
+  if (charts['trend']) { try { charts['trend'].destroy(); } catch(e) {} delete charts['trend']; }
+
+  const data = getTrendData();
+  if (data.length < 1) {
+    canvas.parentElement.innerHTML = '<div class="no-data">需要至少1个批次才能显示趋势</div>';
+    return;
+  }
+
+  const labels = data.map(d => d.label.length > 15 ? d.label.slice(0, 15) + '…' : d.label);
+  const values = data.map(d => d.value);
+
+  const metricLabel = trendMetric === 'avg' ? '平均整体分'
+    : trendMetric === 'lowrate' ? '低分率(%)'
+    : trendMetric === 'highrate' ? '高质率(%)'
+    : trendMetric;
+
+  charts['trend'] = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: metricLabel,
+        data: values,
+        borderColor: '#1677ff',
+        backgroundColor: 'rgba(22,119,255,0.08)',
+        pointBackgroundColor: '#1677ff',
+        pointRadius: 5,
+        pointHoverRadius: 7,
+        fill: true,
+        tension: 0.3,
+        borderWidth: 2,
+        spanGaps: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: (items) => data[items[0].dataIndex]?.label || '',
+            label: ctx => {
+              const v = ctx.parsed.y;
+              const suffix = (trendMetric === 'lowrate' || trendMetric === 'highrate') ? '%' : '';
+              return ` ${metricLabel}: ${v !== null ? v + suffix : 'N/A'}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxRotation: 30, font: { size: 11 } } },
+        y: { beginAtZero: false, grid: { color: '#f0f0f0' } }
+      }
+    }
+  });
+}
+
+function renderTrendBatchSelector() {
+  const wrap = document.getElementById('trend-batch-selector');
+  if (!wrap) return;
+  wrap.innerHTML = '<span class="batch-sel-label">批次：</span>';
+  const allBtn = document.createElement('button');
+  allBtn.className = 'batch-sel-btn' + (!trendSelectedBatches ? ' selected' : '');
+  allBtn.textContent = '全部';
+  allBtn.onclick = () => { trendSelectedBatches = null; renderTrendChart(); renderTrendBatchSelector(); };
+  wrap.appendChild(allBtn);
+  batches.forEach(b => {
+    const btn = document.createElement('button');
+    btn.className = 'batch-sel-btn' + (trendSelectedBatches && trendSelectedBatches.includes(b.id) ? ' selected' : '');
+    btn.textContent = b.name.length > 12 ? b.name.slice(0, 12) + '…' : b.name;
+    btn.title = b.name;
+    btn.onclick = () => {
+      if (!trendSelectedBatches) trendSelectedBatches = batches.map(x => x.id);
+      const idx = trendSelectedBatches.indexOf(b.id);
+      if (idx >= 0) {
+        trendSelectedBatches.splice(idx, 1);
+        if (!trendSelectedBatches.length) trendSelectedBatches = null;
+      } else {
+        trendSelectedBatches.push(b.id);
+      }
+      renderTrendChart();
+      renderTrendBatchSelector();
+    };
+    wrap.appendChild(btn);
+  });
+}
+
+function setTrendMetric(m) {
+  trendMetric = m;
+  // Update button states
+  const btns = document.querySelectorAll('#trend-metric-btns .metric-btn');
+  btns.forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.metric === m);
+  });
+  renderTrendChart();
+}
+
+// ===== TABLE =====
+function buildTableHTML(batch) {
+  return `
+  <div class="card" id="table-section">
+    <div class="card-header">
+      <h3>数据详情</h3>
+      <div class="card-header-actions">
+        <input type="text" class="search-input" id="table-search" placeholder="搜索..." value="${escHtml(searchQuery)}" oninput="onSearch(this.value)">
+        ${chartFilter ? `<span class="filter-badge" id="filter-badge-table" onclick="clearFilter()">已过滤: ${escHtml(String(chartFilter.label || chartFilter.value))} &#215;</span>` : ''}
+        <span style="font-size:12px;color:var(--text-secondary)" id="table-count-label"></span>
+      </div>
+    </div>
+    <div id="table-inner">
+      ${buildTableInner(batch)}
+    </div>
+  </div>`;
+}
+
+function getFilteredRows(batch) {
+  let rows = batch.rows;
+  // Apply chart filter
+  if (chartFilter && chartFilter.type === 'dist') {
+    const { min, max } = chartFilter;
+    rows = rows.filter(r => {
+      const s = calcOverallScore(r, batch.scoreCols, batch.isNewFormat);
+      return !isNaN(s) && s >= min && (s < max || (max === 5 && s <= 5));
+    });
+  }
+  // Apply search
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    rows = rows.filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(q)));
+  }
+  return rows;
+}
+
+function getSortedRows(rows, batch) {
+  if (!sortConfig.col) return rows;
+  const col = sortConfig.col;
+  const dir = sortConfig.dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const va = a[col]; const vb = b[col];
+    const na = parseFloat(va); const nb = parseFloat(vb);
+    if (!isNaN(na) && !isNaN(nb)) return (na - nb) * dir;
+    return String(va || '').localeCompare(String(vb || ''), 'zh-CN') * dir;
+  });
+}
+
+function buildTableInner(batch) {
+  const allFiltered = getFilteredRows(batch);
+  const sorted = getSortedRows(allFiltered, batch);
+  const total = sorted.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  currentPage = Math.min(currentPage, totalPages);
+  const start = (currentPage - 1) * pageSize;
+  const pageRows = sorted.slice(start, start + pageSize);
+
+  const cols = buildTableCols(batch);
+
+  // Update count label after render
+  setTimeout(() => {
+    const lbl = document.getElementById('table-count-label');
+    if (lbl) lbl.textContent = `${total} / ${batch.rows.length} 条`;
+  }, 0);
+
+  return `
+  <div class="table-scroll">
+    <table id="data-table">
+      <thead>
+        <tr>
+          ${cols.map(c => `<th class="${sortConfig.col===c.key?'sorted':''}" onclick="onSort('${c.key}')">
+            ${escHtml(c.label)}<span class="sort-icon"> ${sortConfig.col===c.key?(sortConfig.dir==='asc'?'▲':'▼'):'↕'}</span>
+          </th>`).join('')}
+          ${batch.hasSubdim ? '<th>子维度</th>' : ''}
+        </tr>
+      </thead>
+      <tbody>
+        ${pageRows.length ? pageRows.map(r => buildTableRow(r, cols, batch)).join('') : `<tr><td colspan="${cols.length + (batch.hasSubdim?1:0)}" class="no-data">暂无数据</td></tr>`}
+      </tbody>
+    </table>
+  </div>
+  ${buildPagination(total, totalPages)}`;
+}
+
+function buildTableCols(batch) {
+  const cols = [];
+  if (batch.isNewFormat) {
+    cols.push({ key: '编号', label: '编号' });
+    cols.push({ key: '_overall', label: '整体分' });
+    if (batch.rows.length && batch.rows[0]['视频链接'] !== undefined) {
+      cols.push({ key: '视频链接', label: '视频链接' });
+    }
+    batch.scoreCols.forEach(c => cols.push({ key: c, label: c }));
+  } else {
+    // Show overall first
+    cols.push({ key: '_overall', label: '整体分' });
+    // Show score cols
+    batch.scoreCols.forEach(c => cols.push({ key: c, label: c }));
+    // Show other non-score non-special cols (limit to avoid clutter)
+    if (batch.rows.length) {
+      const specialKeys = new Set([...batch.scoreCols, '整体分', ...batch.scoreCols.map(c => c + '_level2'), ...batch.scoreCols.map(c => c + '_level3')]);
+      const others = Object.keys(batch.rows[0]).filter(k =>
+        !specialKeys.has(k) &&
+        !k.endsWith('_level2') &&
+        !k.endsWith('_level3') &&
+        cols.length < 10
+      );
+      others.slice(0, 5).forEach(k => cols.push({ key: k, label: k }));
+    }
+  }
+  return cols;
+}
+
+function buildTableRow(r, cols, batch) {
+  const overall = calcOverallScore(r, batch.scoreCols, batch.isNewFormat);
+  const rowKey = JSON.stringify(r).slice(0, 40);
+  const rid = btoa(encodeURIComponent(rowKey)).slice(0, 16);
+  const isExpanded = expandedRows.has(rid);
+
+  const cells = cols.map(c => {
+    if (c.key === '_overall') {
+      const cls = getScoreClass(overall);
+      return `<td><span class="score-cell ${cls}">${isNaN(overall)?'-':overall}</span></td>`;
+    }
+    if (c.key === '视频链接') {
+      const v = r[c.key] || '';
+      return `<td>${v ? `<a href="${escHtml(v)}" target="_blank" rel="noopener">查看</a>` : '-'}</td>`;
+    }
+    const v = r[c.key];
+    if (v === undefined || v === null || v === '') return `<td>-</td>`;
+    const n = parseFloat(v);
+    if (batch.scoreCols.includes(c.key) && !isNaN(n)) {
+      return `<td><span class="score-cell ${getScoreClass(n)}">${n}</span></td>`;
+    }
+    return `<td>${escHtml(String(v).slice(0, 100))}</td>`;
+  }).join('');
+
+  const subBtn = batch.hasSubdim
+    ? `<td><button class="expand-btn" onclick="toggleSubdim('${rid}', this)">${isExpanded ? '收起' : '展开'}</button></td>`
+    : '';
+
+  const mainRow = `<tr data-rid="${rid}">${cells}${subBtn}</tr>`;
+
+  if (isExpanded && batch.hasSubdim) {
+    const subdimHTML = buildSubdimRow(r, batch, cols.length + 1);
+    return mainRow + subdimHTML;
+  }
+  return mainRow;
+}
+
+function buildSubdimRow(r, batch, colSpan) {
+  const dims = batch.scoreCols.filter(c => r[c + '_level2'] || r[c + '_level3']);
+  if (!dims.length) return '';
+  const content = dims.map(c => {
+    const l2 = r[c + '_level2'];
+    const l3 = r[c + '_level3'];
+    return `<tr>
+      <td style="padding-left:8px;color:var(--primary);font-weight:600">${escHtml(c)}</td>
+      ${l2 ? `<td>二级: ${escHtml(String(l2))}</td>` : '<td></td>'}
+      ${l3 ? `<td>三级: ${escHtml(String(l3))}</td>` : '<td></td>'}
+    </tr>`;
+  }).join('');
+  return `<tr class="subdim-row">
+    <td colspan="${colSpan}">
+      <table class="subdim-table"><tbody>${content}</tbody></table>
+    </td>
+  </tr>`;
+}
+
+function buildPagination(total, totalPages) {
+  const pages = [];
+  let start = Math.max(1, currentPage - 2);
+  let end = Math.min(totalPages, currentPage + 2);
+  if (end - start < 4) { start = Math.max(1, end - 4); end = Math.min(totalPages, start + 4); }
+  for (let i = start; i <= end; i++) pages.push(i);
+
+  const paginationBtns = pages.map(p =>
+    `<button class="pg-btn ${p===currentPage?'active':''}" onclick="goPage(${p})">${p}</button>`
+  ).join('');
+
+  const sizeOpts = PAGE_SIZES.map(s =>
+    `<option value="${s}" ${s===pageSize?'selected':''}>${s}条/页</option>`
+  ).join('');
+
+  return `<div class="pagination">
+    <span>共 ${total} 条</span>
+    <button class="pg-btn" onclick="goPage(1)" ${currentPage===1?'disabled':''}>«</button>
+    <button class="pg-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>‹</button>
+    ${paginationBtns}
+    <button class="pg-btn" onclick="goPage(${currentPage+1})" ${currentPage===totalPages?'disabled':''}>›</button>
+    <button class="pg-btn" onclick="goPage(${totalPages})" ${currentPage===totalPages?'disabled':''}>»</button>
+    <select class="pg-size-sel" onchange="changePageSize(this.value)">${sizeOpts}</select>
+    <span>第 ${currentPage}/${totalPages} 页</span>
+  </div>`;
+}
+
+function renderTableSection(batch) {
+  const inner = document.getElementById('table-inner');
+  if (!inner || !batch) return;
+  inner.innerHTML = buildTableInner(batch);
+  bindTableSearchEvent();
+  updateFilterBadge(batch);
+}
+
+function updateFilterBadge(batch) {
+  const header = document.querySelector('#table-section .card-header .card-header-actions');
+  if (!header) return;
+  let badge = header.querySelector('.filter-badge');
+  if (chartFilter) {
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'filter-badge';
+      badge.onclick = clearFilter;
+      const countLbl = header.querySelector('#table-count-label');
+      header.insertBefore(badge, countLbl);
+    }
+    badge.innerHTML = `已过滤: ${escHtml(String(chartFilter.label || chartFilter.value))} &#215;`;
+  } else {
+    if (badge) badge.remove();
+  }
+}
+
+function bindTableSearchEvent() {
+  const inp = document.getElementById('table-search');
+  if (inp) {
+    inp.value = searchQuery;
+    inp.oninput = function() { onSearch(this.value); };
+  }
+}
+
+function bindTableEvents(batch) {
+  bindTableSearchEvent();
+}
+
+function toggleSubdim(rid, btn) {
+  if (expandedRows.has(rid)) {
+    expandedRows.delete(rid);
+  } else {
+    expandedRows.add(rid);
+  }
+  const batch = batches.find(b => b.id === activeBatchId);
+  if (batch) renderTableSection(batch);
+}
+
+function onSort(col) {
+  if (sortConfig.col === col) {
+    sortConfig.dir = sortConfig.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortConfig.col = col;
+    sortConfig.dir = 'asc';
+  }
+  currentPage = 1;
+  const batch = batches.find(b => b.id === activeBatchId);
+  if (batch) renderTableSection(batch);
+}
+
+function onSearch(val) {
+  searchQuery = val;
+  currentPage = 1;
+  const batch = batches.find(b => b.id === activeBatchId);
+  if (batch) renderTableSection(batch);
+}
+
+function goPage(p) {
+  const batch = batches.find(b => b.id === activeBatchId);
+  if (!batch) return;
+  const total = getFilteredRows(batch).length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  currentPage = Math.max(1, Math.min(p, totalPages));
+  renderTableSection(batch);
+}
+
+function changePageSize(val) {
+  pageSize = parseInt(val) || 20;
+  currentPage = 1;
+  const batch = batches.find(b => b.id === activeBatchId);
+  if (batch) renderTableSection(batch);
+}
+
+function clearFilter() {
+  chartFilter = null;
+  currentPage = 1;
+  const batch = batches.find(b => b.id === activeBatchId);
+  if (batch) renderTableSection(batch);
+  updateFilterBadge(batch);
+  // Remove filter badge from dist chart header too
+  const distHeader = document.querySelector('#chart-dist')?.closest?.('.card')?.querySelector?.('.card-header');
+  if (distHeader) {
+    const badge = distHeader.querySelector('.filter-badge');
+    if (badge) badge.remove();
+  }
+}
+
+// ===== SHARE / EXPORT =====
+function showShareModal() {
+  if (!batches.length) { showToast('没有数据可导出', 'error'); return; }
+  const modal = document.getElementById('share-modal');
+  modal.style.display = 'flex';
+  const ta = document.getElementById('share-textarea');
+  ta.value = '生成中...';
+  setTimeout(() => {
+    try {
+      ta.value = JSON.stringify({ version: 7, batches }, null, 2);
+    } catch(e) { ta.value = '数据过大，无法序列化'; }
+  }, 50);
+}
+
+function copyShareData() {
+  const ta = document.getElementById('share-textarea');
+  navigator.clipboard && navigator.clipboard.writeText(ta.value).then(() => showToast('已复制到剪贴板', 'success')).catch(() => {
+    ta.select(); document.execCommand('copy'); showToast('已复制', 'success');
+  });
+}
+
+function downloadShareData() {
+  const ta = document.getElementById('share-textarea');
+  const blob = new Blob([ta.value], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a);
-  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+  a.href = url; a.download = `dataquality_export_${Date.now()}.json`;
+  a.click(); URL.revokeObjectURL(url);
+  showToast('下载开始', 'success');
 }
 
-// ==================== INIT ====================
-function init(){
-  loadBatches();
-  if(batches.length>0) currentBatchId=batches[batches.length-1].id;
-  renderSidebar();
-  renderMainContent();
-  initUpload();
+function doImport() {
+  const ta = document.getElementById('import-textarea');
+  try {
+    const data = JSON.parse(ta.value);
+    let imported = [];
+    if (data.batches) imported = data.batches;
+    else if (Array.isArray(data)) imported = data;
+    if (!imported.length) { showToast('没有找到批次数据', 'error'); return; }
+    imported.forEach(b => {
+      if (!batches.find(x => x.id === b.id)) {
+        batches.push({
+          id: b.id || genId(), name: b.name || '导入批次',
+          time: b.time || '', rows: b.rows || [],
+          scoreCols: b.scoreCols || [], isNewFormat: !!b.isNewFormat,
+          hasSubdim: !!b.hasSubdim
+        });
+      }
+    });
+    if (!activeBatchId && batches.length) activeBatchId = batches[0].id;
+    saveState(); renderAll();
+    closeModal('import-modal');
+    showToast(`成功导入 ${imported.length} 个批次`, 'success');
+  } catch(e) { showToast('JSON 格式错误: ' + e.message, 'error'); }
 }
 
-init();
+function clearAllData() {
+  if (!confirm('确认清空全部数据？此操作不可恢复。')) return;
+  batches = []; activeBatchId = null; chartFilter = null;
+  destroyCharts();
+  localStorage.removeItem(STORAGE_KEY);
+  renderAll();
+  showToast('已清空全部数据');
+}
+
+// ===== DRAG AND DROP =====
+function initDropZone() {
+  const zone = document.getElementById('drop-zone');
+  const inp = document.getElementById('file-input');
+
+  zone.addEventListener('click', () => inp.click());
+  inp.addEventListener('change', e => { handleFiles(e.target.files); inp.value = ''; });
+
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    handleFiles(e.dataTransfer.files);
+  });
+
+  // Also allow drop on main content
+  document.addEventListener('dragover', e => e.preventDefault());
+  document.addEventListener('drop', e => {
+    e.preventDefault();
+    const files = e.dataTransfer.files;
+    if (files.length && Array.from(files).some(f => f.name.endsWith('.csv'))) {
+      handleFiles(files);
+    }
+  });
+}
+
+// ===== INIT =====
+function init() {
+  loadState();
+  if (batches.length && !activeBatchId) activeBatchId = batches[0].id;
+  initDropZone();
+  renderAll();
+}
+
+document.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
 </html>
