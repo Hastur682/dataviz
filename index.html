@@ -289,10 +289,11 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','H
     <!-- Trend — always visible once any batch loaded -->
     <div id="trend-section" class="hidden">
       <div class="section-header">
-        <h3>历史趋势</h3>
+        <h3>历史趋势对比</h3>
         <div class="legend-row">
           <span><span class="legend-dot" style="background:#4e79a7"></span>平均整体分</span>
           <span><span class="legend-dot" style="background:#e15759"></span>整体低分率(%)</span>
+          <span id="trend-hint" style="font-size:11px;color:var(--warning);font-weight:500"></span>
         </div>
       </div>
       <div class="section-body">
@@ -466,21 +467,27 @@ function normalizeRows(rawRows) {
       const mainLabel = mainRaw.replace(/^\d+(?:\.\d+)?分-/, '').trim();
 
       let l2Val = mainLabel || '';
-      let l3Val = '';
+      let l3Vals = [];
 
       for (const { score, other } of pairs) {
         const scoreVal = String(raw[score] || '').trim();
         if (scoreVal) {
           if (!l2Val) l2Val = score.replace(/^output\.\d+(?:\.\d+)?分-/, '');
+          // L3: parse "code:label;code:label" segments from the score column value
+          scoreVal.split(';').forEach(seg => {
+            const label = seg.replace(/^[^:]+:/, '').trim();
+            if (label) l3Vals.push(label);
+          });
+          // Also check the _other column as fallback
           const otherVal = String(raw[other] || '').trim();
-          if (otherVal) l3Val = otherVal;
+          if (otherVal && !l3Vals.includes(otherVal)) l3Vals.push(otherVal);
           break;
         }
       }
 
       if (l2Val) {
         row[dim + '_level2'] = l2Val;
-        if (l3Val) row[dim + '_level3'] = l3Val;
+        if (l3Vals.length > 0) row[dim + '_level3'] = l3Vals.join('；');
       }
     });
 
@@ -739,6 +746,8 @@ function renderStatCards(rows){
 function renderTrendChart(){
   destroyChart('trend');
   const sorted = batches.slice().sort((a,b)=>a.uploadTime-b.uploadTime);
+  const hint = document.getElementById('trend-hint');
+  if(hint) hint.textContent = sorted.length < 2 ? '上传更多批次后可查看趋势对比' : '';
   const labels = sorted.map(b=>b.name);
   const avgs = sorted.map(b=>{
     const v=b.rows.filter(r=>!isNaN(r._overallScore));
@@ -933,8 +942,14 @@ function getSubDimData(rows, label){
     const l2 = String(r[l2Col]||'').trim(); if(!l2) return;
     if(!result[l2]) result[l2]={ count:0, l3:{} };
     result[l2].count++;
-    const l3 = String(r[l3Col]||'').trim();
-    if(l3) result[l2].l3[l3] = (result[l2].l3[l3]||0)+1;
+    const l3Raw = String(r[l3Col]||'').trim();
+    if(l3Raw){
+      // l3 may be multiple labels joined by ；
+      l3Raw.split('；').forEach(seg => {
+        const seg2 = seg.trim();
+        if(seg2) result[l2].l3[seg2] = (result[l2].l3[seg2]||0)+1;
+      });
+    }
   });
   const sorted = Object.entries(result).sort((a,b)=>b[1].count-a[1].count);
   const out = {};
@@ -1094,27 +1109,19 @@ function renderTable(allRows){
   const batch = batches.find(b=>b.id===currentBatchId);
   if(!batch) return;
 
-  // Fixed detail columns
-  const scoreSet = new Set(SCORE_COLS);
-  // Detect which optional columns exist in this batch
-  const sample = batch.rows[0] || {};
-  const hasLink    = 'input.cut_off_url' in sample;
-  const hasPreview = '结果预览' in sample;
-  const hasAnnotator = '标注人' in sample;
-  const hasNode    = '当前节点' in sample;
-  const hasInvalid = '是否有效' in sample;
-  const hasTaskNo  = '任务编号' in sample;
-
-  // Build column definitions: { key, label, type }
-  const cols = [];
-  if(hasTaskNo)   cols.push({key:'任务编号',   label:'编号',     type:'id'});
-  if(hasLink)     cols.push({key:'input.cut_off_url', label:'视频', type:'link'});
-  if(hasPreview)  cols.push({key:'结果预览',   label:'详情链接', type:'link'});
-  if(hasAnnotator)cols.push({key:'标注人',     label:'标注人',   type:'text'});
-  if(hasNode)     cols.push({key:'当前节点',   label:'验收情况', type:'text'});
-  if(hasInvalid)  cols.push({key:'是否有效',   label:'是否有效', type:'valid'});
-  SCORE_COLS.filter(c=>c in sample).forEach(c=>cols.push({key:c, label:c, type:'score'}));
-  cols.push({key:'_overallScore', label:'整体分', type:'overall'});
+  // Fixed column definitions — show column regardless of whether field exists
+  // (cells will show — when value missing)
+  const cols = [
+    {key:'任务编号',          label:'编号',     type:'id'},
+    {key:'_overallScore',     label:'整体分',   type:'overall'},
+    {key:'input.cut_off_url', label:'视频',     type:'link'},
+    {key:'结果预览',          label:'详情链接', type:'link'},
+    {key:'标注人',            label:'标注人',   type:'text'},
+    {key:'标注时间',          label:'标注时间', type:'text'},
+    {key:'当前节点',          label:'验收情况', type:'text'},
+    {key:'是否有效',          label:'是否有效', type:'valid'},
+    ...SCORE_COLS.map(c=>({key:c, label:c, type:'score'})),
+  ];
 
   const thHtml = cols.map(({key,label})=>{
     let cls=''; if(tableSortCol===key) cls=tableSortDir==='asc'?'sort-asc':'sort-desc';
