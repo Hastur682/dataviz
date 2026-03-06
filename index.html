@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>数据质量可视化平台</title>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --primary: #4e79a7; --primary-light: #eaf1f9; --primary-dark: #3a6080;
+  --success: #59a14f; --warning: #f28e2b; --danger: #e15759;
+  --bg: #f0f4f8; --surface: #fff; --border: #e2e8f0;
+  --text: #2d3748; --text-muted: #718096;
+  --radius: 10px; --shadow: 0 2px 8px rgba(0,0,0,0.08);
+  --sidebar-w: 210px;
+}
+body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; font-size:14px; }
+
+/* ===== HEADER ===== */
+#app-header {
+  background:var(--surface); border-bottom:1px solid var(--border);
+  height:52px; display:flex; align-items:center; gap:12px; padding:0 20px;
+  position:sticky; top:0; z-index:200; box-shadow:var(--shadow);
+}
+.logo { width:30px;height:30px;background:var(--primary);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:15px;flex-shrink:0; }
+#app-header h1 { font-size:15px;font-weight:600; }
+#current-batch-name { font-size:12px;color:var(--text-muted);background:var(--bg);padding:3px 10px;border-radius:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+#upload-btn-header {
+  margin-left:auto; background:var(--primary); color:#fff; border:none;
+  padding:6px 16px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; flex-shrink:0;
+  transition:opacity .2s;
+}
+#upload-btn-header:hover { opacity:.85; }
+#export-btn-header {
+  background:#fff; color:var(--primary); border:1.5px solid var(--primary);
+  padding:6px 14px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; flex-shrink:0;
+  transition:all .2s;
+}
+#export-btn-header:hover { background:var(--primary-light); }
+
+/* ===== APP LAYOUT ===== */
+#app-wrap { display:flex; height:calc(100vh - 52px); overflow:hidden; }
+
+/* ===== SIDEBAR ===== */
+#sidebar {
+  width:var(--sidebar-w); flex-shrink:0; background:var(--surface);
+  border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden;
+}
+#sidebar-header { padding:14px 16px; font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border); flex-shrink:0; }
+#batch-list { flex:1; overflow-y:auto; padding:6px 0; }
+.batch-item { padding:10px 14px; cursor:pointer; transition:background .15s; border-bottom:1px solid var(--border); position:relative; }
+.batch-item:hover { background:var(--bg); }
+.batch-item.active { background:var(--primary-light); border-left:3px solid var(--primary); }
+.batch-item .b-name { font-size:13px;font-weight:600;margin-bottom:3px; white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:24px; }
+.batch-item .b-meta { font-size:11px;color:var(--text-muted); }
+.batch-del { position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer; color:var(--text-muted);font-size:14px;padding:2px 5px;border-radius:4px;opacity:0; transition:opacity .15s; }
+.batch-item:hover .batch-del { opacity:1; }
+.batch-del:hover { color:var(--danger);background:rgba(225,87,89,.1); }
+.no-batch { padding:32px 16px;text-align:center;color:var(--text-muted);font-size:12px; }
+
+/* ===== MAIN SCROLL AREA ===== */
+#main-area { flex:1; overflow-y:auto; padding:16px 20px; display:flex; flex-direction:column; gap:16px; }
+
+/* ===== EMPTY STATE ===== */
+#empty-state { display:flex;align-items:center;justify-content:center;flex:1;min-height:400px; }
+.upload-box { background:var(--surface);border:2px dashed var(--border);border-radius:16px; padding:60px 40px;text-align:center;cursor:pointer;transition:all .2s;max-width:500px;width:100%; }
+.upload-box:hover,.upload-box.drag-over { border-color:var(--primary);background:var(--primary-light);transform:scale(1.01); }
+.upload-icon { font-size:48px;display:block;margin-bottom:16px; }
+.upload-box h2 { font-size:18px;font-weight:600;margin-bottom:8px; }
+.upload-box p { color:var(--text-muted);font-size:13px;margin-bottom:20px; }
+.btn-primary { display:inline-block;background:var(--primary);color:#fff;padding:10px 28px;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;transition:opacity .2s;border:none; }
+.btn-primary:hover { opacity:.85; }
+.upload-hint { margin-top:10px;font-size:12px;color:var(--text-muted); }
+
+/* ===== TREND SECTION ===== */
+#trend-section { background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden; }
+
+/* ===== STAT CARDS ===== */
+#stat-cards { display:grid;grid-template-columns:repeat(4,1fr);gap:14px; }
+.stat-card { background:var(--surface);border-radius:var(--radius);padding:16px 18px; box-shadow:var(--shadow);border-left:4px solid var(--primary); }
+.stat-card.green { border-left-color:var(--success); }
+.stat-card.orange { border-left-color:var(--warning); }
+.stat-card.red { border-left-color:var(--danger); }
+.stat-card .sc-label { font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px; }
+.stat-card .sc-value { font-size:24px;font-weight:700; }
+.stat-card .sc-sub { font-size:11px;color:var(--text-muted);margin-top:2px; }
+
+/* ===== CARD ===== */
+.card { background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden; }
+.card-header { padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px; }
+.card-header h3 { font-size:14px;font-weight:600; }
+.card-body { padding:16px 18px; }
+.chart-wrap { position:relative; }
+
+/* ===== SECTION HEADER ===== */
+.section-header { padding:12px 18px;border-bottom:1px solid var(--border);display:flex; align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px; }
+.section-header h3 { font-size:14px;font-weight:600; }
+.section-body { padding:16px 18px; }
+
+/* ===== LEGEND ===== */
+.legend-row { display:flex;gap:16px;font-size:12px;color:var(--text-muted);flex-wrap:wrap; }
+.legend-dot { display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px; }
+
+/* ===== TWO-COLUMN ROW ===== */
+.two-col { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.two-col-wide { display:grid; grid-template-columns:1fr 1.6fr; gap:16px; }
+
+/* ===== DATA TABLE ===== */
+.table-scroll {
+  overflow-x:auto; overflow-y:auto;
+  height:320px; min-height:120px; max-height:80vh;
+  resize:vertical;
+  border-bottom:3px solid var(--border);
+}
+.data-table { width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap; }
+.data-table th { background:var(--bg);padding:8px 11px;text-align:left;font-weight:600; color:var(--text-muted);border-bottom:2px solid var(--border); position:sticky;top:0;z-index:1;font-size:11px;text-transform:uppercase;letter-spacing:.04em; cursor:pointer;user-select:none; }
+.data-table th:hover { background:#dde5ef; }
+.data-table th.sort-asc::after { content:' ▲'; font-size:9px; }
+.data-table th.sort-desc::after { content:' ▼'; font-size:9px; }
+.data-table td { padding:6px 11px;border-bottom:1px solid var(--border); }
+.data-table tr:hover td { background:var(--primary-light); }
+.score-chip { display:inline-block;padding:2px 8px;border-radius:10px;font-weight:600;font-size:11px; }
+.score-high { background:#d4edda;color:#155724; }
+.score-mid { background:#fff3cd;color:#856404; }
+.score-low { background:#f8d7da;color:#721c24; }
+.score-1 { background:#f5c6cb;color:#491217;font-weight:700; }
+
+/* pagination */
+#pagination { display:flex;align-items:center;gap:8px;padding:10px 18px;border-top:1px solid var(--border);font-size:13px;flex-wrap:wrap; }
+.page-btn { background:var(--bg);border:1px solid var(--border);border-radius:5px; padding:4px 10px;cursor:pointer;font-size:12px;color:var(--text);transition:all .15s; }
+.page-btn:hover:not(:disabled) { border-color:var(--primary);color:var(--primary); }
+.page-btn:disabled { opacity:.4;cursor:default; }
+.page-btn.active { background:var(--primary);border-color:var(--primary);color:#fff; }
+#page-info { color:var(--text-muted);font-size:12px; }
+#table-search { background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:13px;width:180px; }
+
+/* ===== MODAL ===== */
+#modal-overlay { display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500; align-items:center;justify-content:center; }
+#modal-overlay.show { display:flex; }
+.modal-box { background:var(--surface);border-radius:12px;padding:28px;min-width:320px;max-width:460px;box-shadow:0 8px 40px rgba(0,0,0,.2); }
+.modal-box h3 { font-size:16px;font-weight:600;margin-bottom:10px; }
+.modal-box p { font-size:13px;color:var(--text-muted);margin-bottom:16px; }
+.modal-input { width:100%;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:14px;margin-bottom:16px;outline:none; }
+.modal-input:focus { border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-light); }
+.modal-actions { display:flex;gap:10px;justify-content:flex-end; }
+.btn-cancel { background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 18px;cursor:pointer;font-size:13px; }
+.btn-confirm { background:var(--primary);color:#fff;border:none;border-radius:6px;padding:7px 18px;cursor:pointer;font-size:13px;font-weight:500; }
+.btn-danger-confirm { background:var(--danger);color:#fff;border:none;border-radius:6px;padding:7px 18px;cursor:pointer;font-size:13px;font-weight:500; }
+
+/* ===== LOADING ===== */
+#loading-overlay { display:none;position:fixed;inset:0;background:rgba(255,255,255,.85);z-index:400;align-items:center;justify-content:center;flex-direction:column;gap:12px; }
+#loading-overlay.show { display:flex; }
+.spinner { width:38px;height:38px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* ===== ERROR BANNER ===== */
+#error-banner { display:none;background:#fff5f5;border:1px solid #fed7d7;border-radius:8px;padding:10px 16px;margin:0 0 4px;color:#c53030;font-size:13px; }
+#error-banner.show { display:block; }
+
+/* ===== TOAST ===== */
+#toast { position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(10px); background:#2d3748;color:#fff;padding:10px 20px;border-radius:8px;font-size:13px; opacity:0;transition:all .3s;z-index:600;pointer-events:none; }
+#toast.show { opacity:1;transform:translateX(-50%) translateY(0); }
+
+/* ===== RESPONSIVE ===== */
+@media (max-width:1100px) {
+  .two-col, .two-col-wide { grid-template-columns:1fr; }
+}
+@media (max-width:900px) {
+  #stat-cards { grid-template-columns:repeat(2,1fr); }
+  #sidebar { width:180px; }
+}
+@media (max-width:640px) {
+  #app-wrap { flex-direction:column; }
+  #sidebar { width:100%;height:auto;max-height:160px;border-right:none;border-bottom:1px solid var(--border); }
+  #batch-list { display:flex;flex-direction:row;overflow-x:auto;overflow-y:hidden;padding:4px; }
+  .batch-item { min-width:140px;border-bottom:none;border-right:1px solid var(--border); }
+  #stat-cards { grid-template-columns:repeat(2,1fr); }
+  #main-area { padding:12px; }
+}
+.hidden { display:none !important; }
+
+/* ===== ALL-LABELS CHART WITH SUBDIM ===== */
+.dim-subdim-wrap { margin-top:16px; }
+.dim-tree { border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+.dim-tree-header {
+  padding:9px 14px; background:var(--bg); cursor:pointer;
+  display:flex; align-items:center; justify-content:space-between;
+  font-size:13px; font-weight:600; user-select:none; transition:background .15s;
+  border-bottom:1px solid var(--border);
+}
+.dim-tree-header:last-child { border-bottom:none; }
+.dim-tree-header:hover { background:#e8eef5; }
+.dim-tree-title { display:flex; align-items:center; gap:8px; }
+.dim-arrow { font-size:10px; color:var(--text-muted); transition:transform .2s; }
+.dim-arrow.open { transform:rotate(90deg); }
+.dim-badge { font-size:11px; color:var(--text-muted); font-weight:400; }
+.dim-body { display:none; padding:12px 14px; background:#fff; border-top:1px solid var(--border); }
+.dim-body.open { display:block; }
+
+/* L2 item */
+.l2-item { margin-bottom:6px; }
+.l2-bar-row { display:flex; align-items:center; gap:8px; padding:4px 6px; border-radius:5px; cursor:pointer; transition:background .15s; }
+.l2-bar-row:hover { background:var(--primary-light); }
+.l2-expand-icon { font-size:10px; color:var(--text-muted); width:12px; flex-shrink:0; transition:transform .15s; }
+.l2-expand-icon.open { transform:rotate(90deg); }
+.l2-name { font-size:12px; font-weight:500; min-width:160px; flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:240px; }
+.l2-bar-bg { flex:1; height:13px; background:var(--border); border-radius:3px; overflow:hidden; min-width:60px; }
+.l2-bar-fill { height:100%; background:var(--primary); border-radius:3px; transition:width .4s; }
+.l2-stat { font-size:11px; color:var(--text-muted); min-width:90px; text-align:right; flex-shrink:0; }
+
+/* L3 list */
+.l3-list { display:none; padding:4px 0 2px 32px; }
+.l3-list.open { display:block; }
+.l3-item { display:flex; align-items:center; gap:6px; margin-bottom:5px; }
+.l3-name { font-size:11px; color:var(--text-muted); min-width:140px; flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:200px; }
+.l3-bar-bg { flex:1; height:9px; background:var(--border); border-radius:2px; overflow:hidden; min-width:40px; }
+.l3-bar-fill { height:100%; background:#76b7b2; border-radius:2px; }
+.l3-stat { font-size:10px; color:var(--text-muted); min-width:70px; text-align:right; flex-shrink:0; }
+.subdim-empty { text-align:center; padding:16px; color:var(--text-muted); font-size:12px; }
+</style>
+</head>
+<body>
+
+<div id="loading-overlay"><div class="spinner"></div><span style="color:var(--text-muted);font-size:13px">正在处理...</span></div>
+<div id="toast"></div>
+
+<!-- Modal -->
+<div id="modal-overlay">
+  <div class="modal-box" id="modal-box">
+    <h3 id="modal-title">命名批次</h3>
+    <p id="modal-desc">无法从文件名中识别时间信息，请手动输入批次名称（如：2025年3月）</p>
+    <input class="modal-input" id="modal-input" type="text" placeholder="请输入批次名称">
+    <div class="modal-actions">
+      <button class="btn-cancel" id="modal-cancel">取消</button>
+      <button class="btn-confirm" id="modal-confirm">确认</button>
+    </div>
+  </div>
+</div>
+
+<!-- Header -->
+<header id="app-header">
+  <div class="logo">Q</div>
+  <h1>数据质量可视化平台</h1>
+  <span id="current-batch-name" class="hidden"></span>
+  <button id="export-btn-header" class="hidden">导出分享版</button>
+  <button id="upload-btn-header">上传新批次</button>
+</header>
+
+<div id="app-wrap">
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div id="sidebar-header">历史批次</div>
+    <div id="batch-list"><div class="no-batch">暂无历史数据</div></div>
+  </aside>
+
+  <!-- Main -->
+  <div id="main-area">
+    <div id="error-banner"></div>
+
+    <!-- Empty state -->
+    <div id="empty-state">
+      <div class="upload-box" id="drop-zone">
+        <span class="upload-icon">📊</span>
+        <h2>上传 CSV 数据文件</h2>
+        <p>支持拖拽上传，自动计算整体分、低分率等质量指标</p>
+        <label class="btn-primary">选择文件<input type="file" id="file-input" accept=".csv,text/csv" style="display:none"></label>
+        <div class="upload-hint">支持 .csv 格式 · 最大 100MB · 数据将自动保存</div>
+      </div>
+    </div>
+
+    <!-- Trend — always visible once any batch loaded -->
+    <div id="trend-section" class="hidden">
+      <div class="section-header">
+        <h3>历史趋势</h3>
+        <div class="legend-row">
+          <span><span class="legend-dot" style="background:#4e79a7"></span>平均整体分</span>
+          <span><span class="legend-dot" style="background:#e15759"></span>整体低分率(%)</span>
+        </div>
+      </div>
+      <div class="section-body">
+        <div class="chart-wrap" style="height:180px"><canvas id="trend-chart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div id="stat-cards" class="hidden">
+      <div class="stat-card">
+        <div class="sc-label">数据样本数</div>
+        <div class="sc-value" id="sc-total">—</div>
+        <div class="sc-sub">条记录</div>
+      </div>
+      <div class="stat-card green">
+        <div class="sc-label">平均整体分</div>
+        <div class="sc-value" id="sc-avg">—</div>
+        <div class="sc-sub">满分 5 分</div>
+      </div>
+      <div class="stat-card orange">
+        <div class="sc-label">整体低分率</div>
+        <div class="sc-value" id="sc-low">—</div>
+        <div class="sc-sub">整体分 ≤ 2 的占比</div>
+      </div>
+      <div class="stat-card red">
+        <div class="sc-label">高质率</div>
+        <div class="sc-value" id="sc-high">—</div>
+        <div class="sc-sub">整体分 ≥ 4 的占比</div>
+      </div>
+    </div>
+
+    <!-- Row 1: Overall dist + Low rate (left-right) -->
+    <div class="two-col hidden" id="row-dist-lowrate">
+      <!-- Overall score distribution -->
+      <div class="card">
+        <div class="card-header"><h3>整体分分布</h3></div>
+        <div class="card-body">
+          <div class="chart-wrap" style="height:300px"><canvas id="overall-dist-chart"></canvas></div>
+        </div>
+      </div>
+      <!-- Low rate by label -->
+      <div class="card">
+        <div class="card-header">
+          <h3>各维度低分率（得分 ≤ 2）</h3>
+        </div>
+        <div class="card-body">
+          <div class="chart-wrap" style="height:300px"><canvas id="lowrate-chart"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 2: All-labels dist + Sub-dim tree (left-right) -->
+    <div class="two-col-wide hidden" id="row-labels-subdim">
+      <!-- All labels grouped bar -->
+      <div class="card">
+        <div class="card-header"><h3>各维度分数分布</h3></div>
+        <div class="card-body">
+          <div class="chart-wrap" style="height:340px"><canvas id="all-labels-chart"></canvas></div>
+        </div>
+      </div>
+      <!-- Sub-dim tree panel -->
+      <div class="card" id="subdim-card">
+        <div class="card-header">
+          <h3>子维度详情</h3>
+          <span style="font-size:12px;color:var(--text-muted)">点击左侧维度名展开</span>
+        </div>
+        <div class="card-body" style="padding:10px 12px; overflow-y:auto; max-height:380px;">
+          <div id="all-subdim-panel"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Data table -->
+    <div class="card hidden" id="table-card">
+      <div class="card-header">
+        <h3>数据明细</h3>
+        <input id="table-search" type="text" placeholder="搜索...">
+      </div>
+      <div class="table-scroll" id="table-scroll">
+        <table class="data-table" id="data-table">
+          <thead id="table-head"></thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+      <div id="pagination"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+// ==================== CONSTANTS ====================
+const SCORE_COLS = ['清晰度','内容质量','美学质量','动态基础质量','动态强度'];
+const SCORE_BINS = [1,1.5,2,2.5,3,3.5,4,4.5,5];
+const STORAGE_KEY = 'viz_batches_v3';
+const PAGE_SIZE = 100;
+
+// ==================== NEW FORMAT COLUMN MAPPING ====================
+const NEW_FORMAT_SCORE_MAP = {
+  'output.视频1-画面质量-清晰度':       '清晰度',
+  'output.视频1-画面质量-内容质量分':   '内容质量',
+  'output.视频1-画面质量-美学质量分':   '美学质量',
+  'output.视频1-动态质量-动态基础质量': '动态基础质量',
+  'output.视频1-动态质量-动态强度':     '动态强度',
+};
+
+const NEW_FORMAT_SUBDIM_MAP = {
+  '清晰度': [
+    { score:'output.1分-极低清视频',   other:'output.clarity1_other' },
+    { score:'output.2分-低清视频',     other:'output.clarity2_other' },
+    { score:'output.2.5分-中低清视频', other:'output.clarity2p5_other' },
+  ],
+  '内容质量': [
+    { score:'output.1分-严重的基础质量问题', other:'output.content1_other' },
+    { score:'output.2分-中度基础质量问题',   other:'output.content2_other' },
+    { score:'output.2.5分-画面内容存在瑕疵', other:'output.content2p5_other' },
+  ],
+  '美学质量': [
+    { score:'output.1分-画面无美感',     other:'output.aesthetic1_other' },
+    { score:'output.2分-画面美感较差',   other:'output.aesthetic2_other' },
+    { score:'output.2.5分-中低画面美感', other:'output.aesthetic2p5_other' },
+  ],
+  '动态基础质量': [
+    { score:'output.1分-基础质量不合格',   other:'output.movement_quality1_other' },
+    { score:'output.2分-中低动态基础质量', other:'output.movement_quality2_other' },
+    { score:'output.2.5分-存在运动瑕疵',   other:'output.movement_quality2p5_other' },
+  ],
+  '动态强度': [
+    { score:'output.1分-无动态',    other:'output.movement_range1_other' },
+    { score:'output.2分-低动态',    other:'output.movement_range2_other' },
+    { score:'output.2.5分-中低动态',other:'output.movement_range2p5_other' },
+  ],
+};
+
+const NEW_FORMAT_META_COLS = ['任务编号','题包key','任务明细ID','题目ID','标注人','标注时间','是否有效','无效原因','无效标签'];
+
+function isNewFormat(rows) {
+  if (!rows || rows.length === 0) return false;
+  const keys = Object.keys(rows[0]);
+  return keys.some(k => k === 'output.视频1-画面质量-清晰度' || k === '\ufeffoutput.视频1-画面质量-清晰度');
+}
+
+function extractScore(val) {
+  if (val == null || val === '') return '';
+  const s = String(val).trim();
+  const m = s.match(/^(\d+(?:\.\d+)?)\s*分/);
+  return m ? m[1] : s;
+}
+
+function normalizeRows(rawRows) {
+  const newFmt = isNewFormat(rawRows);
+  if (!newFmt) return rawRows;
+
+  return rawRows.map(raw => {
+    const row = {};
+    NEW_FORMAT_META_COLS.forEach(col => { if (col in raw) row[col] = raw[col]; });
+
+    Object.entries(NEW_FORMAT_SCORE_MAP).forEach(([srcCol, dstCol]) => {
+      const val = raw[srcCol] != null ? raw[srcCol] : raw['\ufeff' + srcCol];
+      row[dstCol] = extractScore(val != null ? val : '');
+    });
+
+    Object.entries(NEW_FORMAT_SUBDIM_MAP).forEach(([dim, pairs]) => {
+      const mainSrcCol = Object.entries(NEW_FORMAT_SCORE_MAP).find(([,d]) => d === dim)?.[0];
+      const mainRaw = mainSrcCol ? String(raw[mainSrcCol] || '').trim() : '';
+      const mainLabel = mainRaw.replace(/^\d+(?:\.\d+)?分-/, '').trim();
+
+      let l2Val = mainLabel || '';
+      let l3Val = '';
+
+      for (const { score, other } of pairs) {
+        const scoreVal = String(raw[score] || '').trim();
+        if (scoreVal) {
+          if (!l2Val) l2Val = score.replace(/^output\.\d+(?:\.\d+)?分-/, '');
+          const otherVal = String(raw[other] || '').trim();
+          if (otherVal) l3Val = otherVal;
+          break;
+        }
+      }
+
+      if (l2Val) {
+        row[dim + '_level2'] = l2Val;
+        if (l3Val) row[dim + '_level3'] = l3Val;
+      }
+    });
+
+    row._isNewFormat = true;
+    return row;
+  });
+}
+
+// ==================== STATE ====================
+let batches = [];
+let currentBatchId = null;
+let tableSortCol = '_overallScore';
+let tableSortDir = 'desc';
+let tableCurrentPage = 1;
+let tableFilteredRows = [];
+let tableSearchText = '';
+let charts = {};
+let activeDimForSubdim = null;
+
+// ==================== UTILS ====================
+function esc(s){ if(s==null)return''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2); }
+function showLoading(v){ document.getElementById('loading-overlay').classList.toggle('show',v); }
+function showError(msg){ const el=document.getElementById('error-banner'); el.textContent='错误：'+msg; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),6000); }
+function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2500); }
+function destroyChart(key){ if(charts[key]){ charts[key].destroy(); charts[key]=null; } }
+function fmtPct(v){ return (v*100).toFixed(1)+'%'; }
+function fmtScore(v){ return Number(v).toFixed(2); }
+
+const SCORE_BIN_COLORS = SCORE_BINS.map(b => b<=2?'#e15759': b<=3?'#f28e2b': b<=4?'#edc948':'#59a14f');
+const DIM_COLORS = ['#4e79a7','#f28e2b','#e15759','#76b7b2','#59a14f'];
+
+// ==================== OVERALL SCORE ====================
+function calcOverallScore(row){
+  const vals = {};
+  SCORE_COLS.forEach(c => { vals[c] = parseFloat(row[c]); });
+  const all = SCORE_COLS.map(col => vals[col]).filter(v => !isNaN(v));
+  if(all.length === 0) return NaN;
+  const qd=vals['清晰度'], cq=vals['内容质量'], ae=vals['美学质量'], db=vals['动态基础质量'], ds=vals['动态强度'];
+  if(all.some(x=>x===1)) return 1.00;
+  if(all.every(x=>x>=4) && all.filter(x=>x>=5).length>=2) return 5.00;
+  if([qd,ae,db,ds].every(x=>x>=3.5) && [db,ds].some(x=>x>=4) && cq>=3) return 4.00;
+  if(all.every(x=>x>=3) && [ae,db,ds].some(x=>x>=3.5)) return 3.50;
+  if(qd>=3 && cq>=3 && ae>=2 && db>=2 && ds>=2) return 3.00;
+  if([qd,cq].some(x=>x===2.5) && ae>=2 && db>=2 && ds>=2) return 2.50;
+  if([qd,cq].some(x=>x===2) && ae>=2 && db>=2 && ds>=2) return 2.00;
+  return parseFloat((all.reduce((a,b)=>a+b,0)/all.length).toFixed(2));
+}
+
+// ==================== BATCH NAME FROM FILENAME ====================
+function extractBatchName(filename){
+  const base = filename.replace(/\.[^.]+$/,'').trim();
+  const zhMatch = base.match(/(\d{4})年(\d{1,2})月/);
+  if(zhMatch) return `${zhMatch[1]}年${parseInt(zhMatch[2])}月`;
+  const m1 = base.match(/(\d{4})[-_](\d{1,2})/);
+  if(m1) return `${m1[1]}年${parseInt(m1[2])}月`;
+  const m2 = base.match(/^(\d{4})(\d{2})$/);
+  if(m2) return `${m2[1]}年${parseInt(m2[2])}月`;
+  const mq = base.match(/(\d{4})[\s_-]?Q(\d)/i);
+  if(mq) return `${mq[1]}年Q${mq[2]}`;
+  return null;
+}
+
+// ==================== STORAGE ====================
+function saveBatches(){ try { localStorage.setItem(STORAGE_KEY, JSON.stringify(batches)); } catch(e){ showError('存储空间不足'); } }
+function loadBatches(){ try { const s=localStorage.getItem(STORAGE_KEY); if(s) batches=JSON.parse(s); } catch(e){ batches=[]; } }
+
+// ==================== MODAL ====================
+let _modalResolve = null;
+function openModal({ title, desc, defaultVal='', placeholder='请输入批次名称', confirmText='确认', isDanger=false }){
+  return new Promise(resolve => {
+    _modalResolve = resolve;
+    document.getElementById('modal-title').textContent = title;
+    document.getElementById('modal-desc').textContent = desc;
+    const inp = document.getElementById('modal-input');
+    inp.value = defaultVal; inp.placeholder = placeholder; inp.style.display = 'block';
+    const btn = document.getElementById('modal-confirm');
+    btn.textContent = confirmText;
+    btn.className = isDanger ? 'btn-danger-confirm' : 'btn-confirm';
+    document.getElementById('modal-overlay').classList.add('show');
+    inp.focus();
+  });
+}
+function openConfirmModal({ title, desc, confirmText='确认', isDanger=false }){
+  return new Promise(resolve => {
+    _modalResolve = resolve;
+    document.getElementById('modal-title').textContent = title;
+    document.getElementById('modal-desc').textContent = desc;
+    document.getElementById('modal-input').style.display = 'none';
+    const btn = document.getElementById('modal-confirm');
+    btn.textContent = confirmText;
+    btn.className = isDanger ? 'btn-danger-confirm' : 'btn-confirm';
+    document.getElementById('modal-overlay').classList.add('show');
+  });
+}
+function closeModal(val){ document.getElementById('modal-overlay').classList.remove('show'); if(_modalResolve){ _modalResolve(val); _modalResolve=null; } }
+document.getElementById('modal-cancel').onclick = () => closeModal(null);
+document.getElementById('modal-confirm').onclick = () => {
+  const inp = document.getElementById('modal-input');
+  closeModal(inp.style.display==='none' ? true : (inp.value.trim()||null));
+};
+document.getElementById('modal-input').addEventListener('keydown', e => { if(e.key==='Enter') document.getElementById('modal-confirm').click(); });
+
+// ==================== FILE HANDLING ====================
+async function handleFile(file){
+  if(!file.name.toLowerCase().endsWith('.csv') && !file.type.includes('csv')){ showError('请上传 .csv 格式文件'); return; }
+  if(file.size > 100*1024*1024){ showError('文件超过 100MB'); return; }
+
+  let batchName = extractBatchName(file.name);
+  if(!batchName){
+    batchName = await openModal({ title:'命名批次', desc:`无法从文件名「${file.name}」自动识别时间，请手动输入批次名称`, placeholder:'例：2025年3月' });
+    if(!batchName) return;
+  }
+
+  const dup = batches.find(b => b.name === batchName);
+  if(dup){
+    const ok = await openConfirmModal({ title:'批次已存在', desc:`批次「${batchName}」已存在，是否覆盖？`, confirmText:'覆盖', isDanger:true });
+    if(!ok) return;
+    batches = batches.filter(b => b.name !== batchName);
+  }
+
+  showLoading(true);
+  Papa.parse(file, {
+    header:true, skipEmptyLines:true, dynamicTyping:false,
+    complete(results){
+      if(!results.data || results.data.length===0){ showLoading(false); showError('CSV 文件为空'); return; }
+      const normalized = normalizeRows(results.data);
+      const rows = normalized.map(r => {
+        const out = {};
+        Object.keys(r).forEach(k => { out[k]=r[k]; });
+        out._overallScore = calcOverallScore(r);
+        return out;
+      });
+      const batch = { id:uid(), name:batchName, uploadTime:Date.now(), rows };
+      batches.push(batch);
+      batches.sort((a,b)=>a.uploadTime-b.uploadTime);
+      saveBatches();
+      currentBatchId = batch.id;
+      showLoading(false);
+      renderSidebar();
+      renderMainContent();
+      showToast(`批次「${batchName}」上传成功，共 ${rows.length} 条数据`);
+    },
+    error(err){ showLoading(false); showError('解析失败：'+err.message); }
+  });
+}
+
+// ==================== SIDEBAR ====================
+function renderSidebar(){
+  const list = document.getElementById('batch-list');
+  if(batches.length===0){ list.innerHTML='<div class="no-batch">暂无历史数据<br>上传第一个批次开始使用</div>'; return; }
+  list.innerHTML = batches.slice().reverse().map(b=>`
+    <div class="batch-item ${b.id===currentBatchId?'active':''}" data-id="${b.id}">
+      <div class="b-name">${esc(b.name)}</div>
+      <div class="b-meta">${b.rows.length.toLocaleString('zh-CN')} 条 · ${new Date(b.uploadTime).toLocaleDateString('zh-CN')}</div>
+      <button class="batch-del" data-id="${b.id}" title="删除">×</button>
+    </div>`).join('');
+
+  list.querySelectorAll('.batch-item').forEach(el=>{
+    el.addEventListener('click', e=>{ if(e.target.classList.contains('batch-del')) return; currentBatchId=el.dataset.id; renderSidebar(); renderMainContent(); });
+  });
+  list.querySelectorAll('.batch-del').forEach(btn=>{
+    btn.addEventListener('click', async e=>{
+      e.stopPropagation();
+      const id=btn.dataset.id; const b=batches.find(x=>x.id===id); if(!b) return;
+      const ok=await openConfirmModal({ title:'删除批次', desc:`确定删除批次「${b.name}」吗？`, confirmText:'删除', isDanger:true });
+      if(!ok) return;
+      batches=batches.filter(x=>x.id!==id); saveBatches();
+      if(currentBatchId===id) currentBatchId=batches.length>0?batches[batches.length-1].id:null;
+      renderSidebar(); renderMainContent(); showToast('批次已删除');
+    });
+  });
+}
+
+// ==================== MAIN RENDER ====================
+function renderMainContent(){
+  const show = id => document.getElementById(id)?.classList.remove('hidden');
+  const hide = id => document.getElementById(id)?.classList.add('hidden');
+
+  if(!currentBatchId || batches.length===0){
+    show('empty-state');
+    ['trend-section','stat-cards','row-dist-lowrate','row-labels-subdim','table-card'].forEach(hide);
+    document.getElementById('current-batch-name').classList.add('hidden');
+    document.getElementById('export-btn-header').classList.add('hidden');
+    return;
+  }
+
+  hide('empty-state');
+  const batch = batches.find(b=>b.id===currentBatchId);
+  if(!batch) return;
+
+  document.getElementById('current-batch-name').textContent = batch.name;
+  document.getElementById('current-batch-name').classList.remove('hidden');
+  document.getElementById('export-btn-header').classList.remove('hidden');
+  ['stat-cards','row-dist-lowrate','row-labels-subdim','table-card'].forEach(show);
+
+  renderStatCards(batch.rows);
+  renderTrendChart();   // always show
+  show('trend-section');
+  renderOverallDistChart(batch.rows);
+  renderLowRateChart(batch.rows);
+  renderAllLabelsChart(batch.rows);
+  activeDimForSubdim = null;
+  renderAllSubdimPanel(batch.rows, null);
+  tableCurrentPage=1; tableSearchText=''; tableSortCol='_overallScore'; tableSortDir='desc';
+  document.getElementById('table-search').value='';
+  renderTable(batch.rows);
+}
+
+// ==================== STAT CARDS ====================
+function renderStatCards(rows){
+  const valid = rows.filter(r=>!isNaN(r._overallScore));
+  const avg = valid.length>0 ? valid.reduce((s,r)=>s+r._overallScore,0)/valid.length : 0;
+  const low = valid.length>0 ? valid.filter(r=>r._overallScore<=2).length/valid.length : 0;
+  const high = valid.length>0 ? valid.filter(r=>r._overallScore>=4).length/valid.length : 0;
+  document.getElementById('sc-total').textContent = rows.length.toLocaleString('zh-CN');
+  document.getElementById('sc-avg').textContent = fmtScore(avg);
+  document.getElementById('sc-low').textContent = fmtPct(low);
+  document.getElementById('sc-high').textContent = fmtPct(high);
+}
+
+// ==================== TREND CHART (always show ≥1 batch) ====================
+function renderTrendChart(){
+  destroyChart('trend');
+  const sorted = batches.slice().sort((a,b)=>a.uploadTime-b.uploadTime);
+  const labels = sorted.map(b=>b.name);
+  const avgs = sorted.map(b=>{
+    const v=b.rows.filter(r=>!isNaN(r._overallScore));
+    return v.length>0 ? parseFloat((v.reduce((s,r)=>s+r._overallScore,0)/v.length).toFixed(2)) : 0;
+  });
+  const lowRates = sorted.map(b=>{
+    const v=b.rows.filter(r=>!isNaN(r._overallScore));
+    return v.length>0 ? parseFloat((v.filter(r=>r._overallScore<=2).length/v.length*100).toFixed(1)) : 0;
+  });
+  const ctx = document.getElementById('trend-chart').getContext('2d');
+  charts['trend'] = new Chart(ctx,{
+    type:'line',
+    data:{ labels, datasets:[
+      { label:'平均整体分', data:avgs, borderColor:'#4e79a7', backgroundColor:'rgba(78,121,167,.12)', yAxisID:'y1', tension:.35, pointRadius:6, pointHoverRadius:8, fill:true },
+      { label:'低分率(%)', data:lowRates, borderColor:'#e15759', backgroundColor:'rgba(225,87,89,.08)', yAxisID:'y2', tension:.35, pointRadius:6, pointHoverRadius:8, fill:true, borderDash:[5,4] }
+    ]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{ mode:'index', intersect:false },
+      plugins:{ legend:{ position:'bottom', labels:{ font:{size:12}, padding:16, boxWidth:12 } } },
+      scales:{
+        y1:{ type:'linear', position:'left', min:0, max:5, ticks:{ font:{size:11} }, title:{ display:true, text:'整体分', font:{size:11} } },
+        y2:{ type:'linear', position:'right', min:0, ticks:{ callback:v=>v+'%', font:{size:11} }, grid:{drawOnChartArea:false}, title:{ display:true, text:'低分率', font:{size:11} } }
+      }
+    }
+  });
+}
+
+// ==================== OVERALL DIST CHART ====================
+function renderOverallDistChart(rows){
+  destroyChart('overallDist');
+  const bins = {};
+  SCORE_BINS.forEach(b=>{ bins[b]=0; });
+  rows.forEach(r=>{ const s=r._overallScore; if(!isNaN(s)){ const k=SCORE_BINS.find(b=>Math.abs(b-s)<0.01); if(k!==undefined) bins[k]++; } });
+  const values = SCORE_BINS.map(b=>bins[b]||0);
+  const total = rows.length;
+  const ctx = document.getElementById('overall-dist-chart').getContext('2d');
+  charts['overallDist'] = new Chart(ctx,{
+    type:'bar',
+    data:{ labels:SCORE_BINS.map(String), datasets:[{ data:values, backgroundColor:SCORE_BIN_COLORS, borderWidth:0 }] },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{ display:false },
+        datalabels: false,
+        tooltip:{ callbacks:{ label:c=>` ${c.raw.toLocaleString('zh-CN')} 条 (${(c.raw/total*100).toFixed(1)}%)` }}
+      },
+      scales:{
+        x:{ title:{ display:true, text:'整体分', font:{size:11} }, ticks:{ font:{size:12}, maxRotation:0 } },
+        y:{ beginAtZero:true, ticks:{ font:{size:11} },
+          afterDataLimits(scale){ scale.max = Math.ceil(scale.max * 1.12); }
+        }
+      }
+    }
+  });
+}
+
+// ==================== LOW RATE CHART ====================
+function renderLowRateChart(rows){
+  destroyChart('lowrate');
+  const total = rows.length;
+  const rates = SCORE_COLS.map(col=>{
+    const cnt = rows.filter(r=>{ const v=parseFloat(r[col]); return !isNaN(v)&&v<=2; }).length;
+    return parseFloat((cnt/total*100).toFixed(1));
+  });
+  const colors = rates.map(r=>r>=30?'#e15759': r>=15?'#f28e2b':'#59a14f');
+  const ctx = document.getElementById('lowrate-chart').getContext('2d');
+  charts['lowrate'] = new Chart(ctx,{
+    type:'bar',
+    data:{ labels:SCORE_COLS, datasets:[{ data:rates, backgroundColor:colors, borderWidth:0 }] },
+    options:{
+      indexAxis:'y',
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{ callbacks:{ label:c=>` 低分率: ${c.raw}%` }}
+      },
+      scales:{
+        x:{ min:0, max:100, ticks:{ callback:v=>v+'%', font:{size:11} }, grid:{color:'rgba(0,0,0,0.04)'},
+          afterDataLimits(scale){ scale.max = Math.min(100, Math.ceil((scale.max||10)*1.15)); }
+        },
+        y:{ ticks:{ font:{size:13}, padding:4 } }
+      }
+    }
+  });
+}
+
+// ==================== ALL LABELS GROUPED BAR CHART ====================
+function renderAllLabelsChart(rows){
+  destroyChart('allLabels');
+  const total = rows.length;
+
+  // For each dim, compute counts per SCORE_BIN
+  const datasets = SCORE_COLS.map((col, ci) => {
+    const binCounts = SCORE_BINS.map(b => {
+      return rows.filter(r => { const v=parseFloat(r[col]); return !isNaN(v) && Math.abs(v-b)<0.01; }).length;
+    });
+    return {
+      label: col,
+      data: binCounts,
+      backgroundColor: DIM_COLORS[ci],
+      borderWidth: 0,
+    };
+  });
+
+  const ctx = document.getElementById('all-labels-chart').getContext('2d');
+  charts['allLabels'] = new Chart(ctx, {
+    type:'bar',
+    data:{ labels: SCORE_BINS.map(String), datasets },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{ position:'bottom', labels:{ font:{size:12}, padding:12, boxWidth:12 },
+          onClick(e, legendItem, legend){
+            // Default toggle + re-render subdim for clicked dim
+            Chart.defaults.plugins.legend.onClick.call(legend.chart, e, legendItem, legend);
+          }
+        },
+        tooltip:{ callbacks:{
+          label: c => ` ${c.dataset.label}: ${c.raw.toLocaleString('zh-CN')} 条 (${total>0?(c.raw/total*100).toFixed(1):0}%)`
+        }}
+      },
+      scales:{
+        x:{ title:{ display:true, text:'分数', font:{size:11} }, ticks:{ font:{size:11}, maxRotation:0 } },
+        y:{ beginAtZero:true, ticks:{ font:{size:11} } }
+      },
+      onClick(evt, elements){
+        if(!elements.length) return;
+        const dimIdx = elements[0].datasetIndex;
+        const dim = SCORE_COLS[dimIdx];
+        const batch = batches.find(b=>b.id===currentBatchId);
+        if(!batch) return;
+        // Toggle: clicking same dim again collapses
+        activeDimForSubdim = (activeDimForSubdim===dim) ? null : dim;
+        renderAllSubdimPanel(batch.rows, activeDimForSubdim);
+      }
+    }
+  });
+}
+
+// ==================== SUB-DIM DATA ====================
+function getSubDimData(rows, label){
+  const l2Col = label+'_level2';
+  const l3Col = label+'_level3';
+  const hasL2 = rows.some(r => r[l2Col] != null && String(r[l2Col]).trim() !== '');
+  if(!hasL2) return null;
+  const result = {};
+  rows.forEach(r => {
+    const l2 = String(r[l2Col]||'').trim(); if(!l2) return;
+    if(!result[l2]) result[l2]={ count:0, l3:{} };
+    result[l2].count++;
+    const l3 = String(r[l3Col]||'').trim();
+    if(l3) result[l2].l3[l3] = (result[l2].l3[l3]||0)+1;
+  });
+  const sorted = Object.entries(result).sort((a,b)=>b[1].count-a[1].count);
+  const out = {};
+  sorted.forEach(([k,v])=>{ v.pct=(v.count/rows.length*100).toFixed(1); out[k]=v; });
+  return out;
+}
+
+// ==================== ALL SUBDIM PANEL ====================
+function renderAllSubdimPanel(rows, activeDim){
+  const container = document.getElementById('all-subdim-panel');
+  container.innerHTML = '';
+
+  if(!activeDim){
+    container.innerHTML = '<div class="subdim-empty" style="padding:40px 16px">点击上方图表中的某个维度色块<br>查看该维度的子维度分布</div>';
+    return;
+  }
+
+  const data = getSubDimData(rows, activeDim);
+  if(!data){
+    container.innerHTML = `<div class="subdim-empty">「${esc(activeDim)}」暂无子维度数据</div>`;
+    return;
+  }
+
+  const entries = Object.entries(data);
+  const maxCount = entries.length>0 ? entries[0][1].count : 1;
+
+  const itemsHtml = entries.map(([l2, info])=>{
+    const barW = maxCount>0 ? (info.count/maxCount*100).toFixed(1) : 0;
+    const l3Entries = Object.entries(info.l3).sort((a,b)=>b[1]-a[1]);
+    const hasL3 = l3Entries.length>0;
+
+    const expandIcon = hasL3
+      ? `<span class="l2-expand-icon">▶</span>`
+      : `<span class="l2-expand-icon" style="opacity:0">▶</span>`;
+
+    const l3Html = hasL3 ? `<div class="l3-list">
+      ${l3Entries.map(([l3,cnt])=>{
+        const l3W = info.count>0 ? (cnt/info.count*100).toFixed(1) : 0;
+        return `<div class="l3-item">
+          <span class="l3-name" title="${esc(l3)}">${esc(l3)}</span>
+          <div class="l3-bar-bg"><div class="l3-bar-fill" style="width:${l3W}%"></div></div>
+          <span class="l3-stat">${cnt.toLocaleString('zh-CN')} (${(cnt/rows.length*100).toFixed(1)}%)</span>
+        </div>`;
+      }).join('')}
+    </div>` : '';
+
+    return `<div class="l2-item">
+      <div class="l2-bar-row" ${hasL3?'data-has-l3="1"':''}>
+        ${expandIcon}
+        <span class="l2-name" title="${esc(l2)}">${esc(l2)}</span>
+        <div class="l2-bar-bg"><div class="l2-bar-fill" style="width:${barW}%"></div></div>
+        <span class="l2-stat">${info.count.toLocaleString('zh-CN')} (${info.pct}%)</span>
+      </div>
+      ${l3Html}
+    </div>`;
+  }).join('');
+
+  const dimColor = DIM_COLORS[SCORE_COLS.indexOf(activeDim)] || '#4e79a7';
+  container.innerHTML = `
+    <div style="font-size:13px;font-weight:600;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid ${dimColor};color:${dimColor}">
+      ${esc(activeDim)} · 子维度分布
+    </div>
+    ${entries.length===0 ? '<div class="subdim-empty">暂无子维度数据</div>' : itemsHtml}
+  `;
+
+  container.querySelectorAll('.l2-bar-row[data-has-l3]').forEach(row=>{
+    row.addEventListener('click', ()=>{
+      const icon = row.querySelector('.l2-expand-icon');
+      const l3List = row.closest('.l2-item').querySelector('.l3-list');
+      if(!l3List) return;
+      l3List.classList.toggle('open');
+      icon.classList.toggle('open');
+    });
+  });
+}
+
+// ==================== DATA TABLE ====================
+function renderTable(allRows){
+  const search = tableSearchText.toLowerCase();
+  let filtered = search
+    ? allRows.filter(r=>Object.values(r).some(v=>String(v||'').toLowerCase().includes(search)))
+    : allRows;
+
+  filtered = filtered.slice().sort((a,b)=>{
+    let va=a[tableSortCol], vb=b[tableSortCol];
+    const na=parseFloat(va), nb=parseFloat(vb);
+    if(!isNaN(na)&&!isNaN(nb)){ va=na; vb=nb; }
+    if(va<vb) return tableSortDir==='asc'?-1:1;
+    if(va>vb) return tableSortDir==='asc'?1:-1;
+    return 0;
+  });
+
+  tableFilteredRows = filtered;
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total/PAGE_SIZE));
+  if(tableCurrentPage>totalPages) tableCurrentPage=1;
+  const start=(tableCurrentPage-1)*PAGE_SIZE;
+  const page=filtered.slice(start, start+PAGE_SIZE);
+
+  const batch = batches.find(b=>b.id===currentBatchId);
+  if(!batch) return;
+
+  const isNew = batch.rows.length>0 && batch.rows[0]._isNewFormat;
+  const scoreSet = new Set(SCORE_COLS);
+
+  let allHeaders;
+  if(isNew){
+    const metaPresent = NEW_FORMAT_META_COLS.filter(c=>c in (batch.rows[0]||{}));
+    allHeaders = [...metaPresent, ...SCORE_COLS.filter(c=>c in (batch.rows[0]||{}))];
+  } else {
+    allHeaders = batch.rows.length>0 ? Object.keys(batch.rows[0]).filter(k=>!k.startsWith('_')) : [];
+  }
+
+  const thHtml = [...allHeaders,'_overallScore'].map(h=>{
+    const isScore = scoreSet.has(h)||h==='_overallScore';
+    const label = h==='_overallScore'?'整体分':h;
+    let cls=''; if(tableSortCol===h) cls=tableSortDir==='asc'?'sort-asc':'sort-desc';
+    return `<th class="${cls}" data-col="${esc(h)}" ${isScore?'style="min-width:70px"':''}>${esc(label)}</th>`;
+  }).join('');
+  document.getElementById('table-head').innerHTML=`<tr>${thHtml}</tr>`;
+
+  document.getElementById('table-head').querySelectorAll('th').forEach(th=>{
+    th.addEventListener('click',()=>{
+      if(tableSortCol===th.dataset.col){ tableSortDir=tableSortDir==='asc'?'desc':'asc'; }
+      else { tableSortCol=th.dataset.col; tableSortDir='desc'; }
+      tableCurrentPage=1; renderTable(batch.rows);
+    });
+  });
+
+  const tbody = page.map(row=>{
+    const tds=[...allHeaders,'_overallScore'].map(h=>{
+      if(h==='_overallScore'){
+        const s=row._overallScore; if(isNaN(s)) return '<td>—</td>';
+        let cls='score-chip ';
+        if(s<=1) cls+='score-1'; else if(s<=2) cls+='score-low'; else if(s<4) cls+='score-mid'; else cls+='score-high';
+        return `<td><span class="${cls}">${fmtScore(s)}</span></td>`;
+      }
+      if(scoreSet.has(h)){
+        const v=parseFloat(row[h]); if(isNaN(v)) return `<td>—</td>`;
+        let style=''; if(v<=2) style='color:#e15759;font-weight:600'; else if(v>=4) style='color:#59a14f;font-weight:600';
+        return `<td style="${style}">${v}</td>`;
+      }
+      return `<td>${esc(row[h]||'')}</td>`;
+    }).join('');
+    return `<tr>${tds}</tr>`;
+  }).join('');
+  document.getElementById('table-body').innerHTML=tbody;
+
+  renderPagination(total, totalPages, batch.rows);
+}
+
+function renderPagination(total, totalPages, allRows){
+  const pag=document.getElementById('pagination');
+  const start=(tableCurrentPage-1)*PAGE_SIZE+1;
+  const end=Math.min(tableCurrentPage*PAGE_SIZE,total);
+
+  let pages=[];
+  if(totalPages<=7){ for(let i=1;i<=totalPages;i++) pages.push(i); }
+  else {
+    pages=[1];
+    if(tableCurrentPage>3) pages.push('...');
+    for(let i=Math.max(2,tableCurrentPage-1);i<=Math.min(totalPages-1,tableCurrentPage+1);i++) pages.push(i);
+    if(tableCurrentPage<totalPages-2) pages.push('...');
+    pages.push(totalPages);
+  }
+
+  const pageButtons=pages.map(p=>{
+    if(p==='...') return `<span style="padding:4px 6px;color:var(--text-muted)">…</span>`;
+    return `<button class="page-btn ${p===tableCurrentPage?'active':''}" data-p="${p}">${p}</button>`;
+  }).join('');
+
+  pag.innerHTML=`
+    <button class="page-btn" id="pg-prev" ${tableCurrentPage<=1?'disabled':''}>‹ 上一页</button>
+    ${pageButtons}
+    <button class="page-btn" id="pg-next" ${tableCurrentPage>=totalPages?'disabled':''}>下一页 ›</button>
+    <span id="page-info">${total===0?'无结果':`第 ${start}-${end} 条，共 ${total.toLocaleString('zh-CN')} 条`}</span>
+  `;
+
+  pag.querySelectorAll('.page-btn[data-p]').forEach(btn=>{
+    btn.addEventListener('click',()=>{ tableCurrentPage=parseInt(btn.dataset.p); renderTable(allRows); });
+  });
+  pag.querySelector('#pg-prev')?.addEventListener('click',()=>{ if(tableCurrentPage>1){ tableCurrentPage--; renderTable(allRows); }});
+  pag.querySelector('#pg-next')?.addEventListener('click',()=>{ if(tableCurrentPage<totalPages){ tableCurrentPage++; renderTable(allRows); }});
+}
+
+document.getElementById('table-search').addEventListener('input', e=>{
+  tableSearchText=e.target.value; tableCurrentPage=1;
+  const batch=batches.find(b=>b.id===currentBatchId);
+  if(batch) renderTable(batch.rows);
+});
+
+// ==================== UPLOAD INIT ====================
+function initUpload(){
+  const dropZone=document.getElementById('drop-zone');
+  const triggerUpload=()=>{ const fi=document.createElement('input'); fi.type='file'; fi.accept='.csv,text/csv'; fi.onchange=e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); }; fi.click(); };
+  if(dropZone){
+    dropZone.addEventListener('click', e=>{ if(e.target.tagName!=='INPUT') triggerUpload(); });
+    dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('drag-over');});
+    dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop',e=>{ e.preventDefault(); dropZone.classList.remove('drag-over'); if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+  }
+  document.getElementById('upload-btn-header').addEventListener('click', triggerUpload);
+  document.getElementById('export-btn-header').addEventListener('click', exportShareFile);
+  document.addEventListener('dragover', e=>e.preventDefault());
+  document.addEventListener('drop', e=>{
+    e.preventDefault();
+    const file=e.dataTransfer?.files?.[0];
+    if(file&&(file.name.endsWith('.csv')||file.type.includes('csv'))) handleFile(file);
+  });
+}
+
+// ==================== EXPORT SHARE ====================
+function exportShareFile(){
+  if(batches.length===0){ showError('没有可导出的数据'); return; }
+
+  // Read the current HTML source, then inject batches data
+  const xhr = new XMLHttpRequest();
+  xhr.open('GET', location.href, false); // sync read self
+  try { xhr.send(); } catch(e){
+    // file:// protocol may block XHR; fall back to inline template
+    exportShareFallback(); return;
+  }
+  if(xhr.status !== 200 && xhr.status !== 0){ exportShareFallback(); return; }
+
+  let src = xhr.responseText;
+
+  // Remove any previously injected SHARE_DATA block
+  src = src.replace(/\/\* ===== SHARE_DATA_START ===== \*\/[\s\S]*?\/\* ===== SHARE_DATA_END ===== \*\//g, '');
+
+  // Inject before init()
+  const injection = `/* ===== SHARE_DATA_START ===== */
+const _SHARE_BATCHES = ${JSON.stringify(batches)};
+/* ===== SHARE_DATA_END ===== */
+`;
+  src = src.replace('// ==================== INIT ====================', injection + '// ==================== INIT ====================');
+
+  // Patch init() to load from _SHARE_BATCHES instead of localStorage, and hide upload/export buttons
+  src = src.replace(
+    'function init(){\n  loadBatches();\n  if(batches.length>0) currentBatchId=batches[batches.length-1].id;',
+    `function init(){\n  if(typeof _SHARE_BATCHES!=='undefined'&&_SHARE_BATCHES.length>0){\n    batches=_SHARE_BATCHES;\n    currentBatchId=batches[batches.length-1].id;\n    document.getElementById('upload-btn-header').style.display='none';\n    document.getElementById('export-btn-header').style.display='none';\n  } else {\n    loadBatches();\n    if(batches.length>0) currentBatchId=batches[batches.length-1].id;\n  }`
+  );
+
+  // Determine filename from batch names
+  const names = batches.map(b=>b.name).join('_');
+  const safeName = names.replace(/[\/\\:*?"<>|]/g,'').slice(0,60);
+  downloadHtml(src, `数据质量报告_${safeName}.html`);
+  showToast(`已导出分享版，包含 ${batches.length} 个批次`);
+}
+
+function exportShareFallback(){
+  // Simpler fallback: just serialize batches as JSON for user to send separately
+  showError('当前环境无法自动嵌入数据。请通过服务器访问平台后再导出，或直接发送 localStorage 数据。');
+}
+
+function downloadHtml(content, filename){
+  const blob = new Blob([content], { type:'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+
+// ==================== INIT ====================
+function init(){
+  loadBatches();
+  if(batches.length>0) currentBatchId=batches[batches.length-1].id;
+  renderSidebar();
+  renderMainContent();
+  initUpload();
+}
+
+init();
+</script>
+</body>
+</html>
