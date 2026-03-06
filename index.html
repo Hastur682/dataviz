@@ -389,7 +389,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','H
 // ==================== CONSTANTS ====================
 const SCORE_COLS = ['清晰度','内容质量','美学质量','动态基础质量','动态强度'];
 const SCORE_BINS = [1,1.5,2,2.5,3,3.5,4,4.5,5];
-const STORAGE_KEY = 'viz_batches_v3';
+const STORAGE_KEY = 'viz_batches_v4';
 const PAGE_SIZE = 100;
 
 // ==================== NEW FORMAT COLUMN MAPPING ====================
@@ -430,6 +430,8 @@ const NEW_FORMAT_SUBDIM_MAP = {
 };
 
 const NEW_FORMAT_META_COLS = ['任务编号','题包key','任务明细ID','题目ID','标注人','标注时间','是否有效','无效原因','无效标签'];
+// Extra fields to pass through from new-format CSV without renaming
+const NEW_FORMAT_PASSTHROUGH_COLS = ['input.cut_off_url','结果预览','当前节点','质检信息','标注版本'];
 
 function isNewFormat(rows) {
   if (!rows || rows.length === 0) return false;
@@ -451,6 +453,7 @@ function normalizeRows(rawRows) {
   return rawRows.map(raw => {
     const row = {};
     NEW_FORMAT_META_COLS.forEach(col => { if (col in raw) row[col] = raw[col]; });
+    NEW_FORMAT_PASSTHROUGH_COLS.forEach(col => { if (col in raw) row[col] = raw[col]; });
 
     Object.entries(NEW_FORMAT_SCORE_MAP).forEach(([srcCol, dstCol]) => {
       const val = raw[srcCol] != null ? raw[srcCol] : raw['\ufeff' + srcCol];
@@ -536,7 +539,7 @@ function updateDetailPanel(){
   const batch = batches.find(b=>b.id===currentBatchId);
   if(!batch) return;
   const filtered = applyFilter(tableBaseRows||batch.rows);
-  renderAllLabelsChart(filtered);   // sync dimension chart with filter
+  renderAllLabelsChart(filtered, activeDimForSubdim);  // focus on active dim if any
   renderDetailTable(filtered);
 }
 
@@ -858,12 +861,15 @@ function highlightLowRateBar(){
 }
 
 // ==================== ALL LABELS GROUPED BAR CHART ====================
-function renderAllLabelsChart(rows){
+function renderAllLabelsChart(rows, focusDim){
   destroyChart('allLabels');
   const total = rows.length;
 
-  // For each dim, compute counts per SCORE_BIN
-  const datasets = SCORE_COLS.map((col, ci) => {
+  // If a specific dimension is focused (from subdim selection), show only that dim
+  const dimsToShow = focusDim ? SCORE_COLS.filter(c=>c===focusDim) : SCORE_COLS;
+
+  const datasets = dimsToShow.map((col) => {
+    const ci = SCORE_COLS.indexOf(col);
     const binCounts = SCORE_BINS.map(b => {
       return rows.filter(r => { const v=parseFloat(r[col]); return !isNaN(v) && Math.abs(v-b)<0.01; }).length;
     });
@@ -953,7 +959,11 @@ function renderSubdimButtons(rows){
       const dim=btn.dataset.dim;
       activeDimForSubdim=(activeDimForSubdim===dim)?null:dim;
       const batch=batches.find(b=>b.id===currentBatchId);
-      if(batch){ renderSubdimButtons(batch.rows); renderAllSubdimPanel(batch.rows, activeDimForSubdim); }
+      if(batch){
+        renderSubdimButtons(batch.rows);
+        renderAllSubdimPanel(batch.rows, activeDimForSubdim);
+        renderAllLabelsChart(batch.rows, activeDimForSubdim);  // focus left chart
+      }
     });
   });
 }
@@ -1213,7 +1223,7 @@ function initUpload(){
     activeFilter=null;
     const batch=batches.find(b=>b.id===currentBatchId);
     if(batch){
-      renderAllLabelsChart(tableBaseRows||batch.rows);  // restore chart to full data
+      renderAllLabelsChart(tableBaseRows||batch.rows, activeDimForSubdim);
       renderDetailTable(tableBaseRows||batch.rows);
       highlightPieSegment([]);
       highlightLowRateBar();
