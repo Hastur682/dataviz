@@ -505,6 +505,62 @@ a:hover { text-decoration: underline; }
   font-size: 13px; border: 1px solid var(--primary); border-radius: 4px;
   padding: 1px 4px; width: 100%; outline: none; color: var(--text);
 }
+
+/* ===== CATEGORIES SIDEBAR ===== */
+.cat-group { margin-bottom: 2px; }
+.cat-header {
+  display: flex; align-items: center; gap: 4px;
+  padding: 6px 8px 4px; user-select: none;
+}
+.cat-header-label {
+  flex: 1; font-size: 11px; font-weight: 600; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
+}
+.cat-header-label:hover { color: var(--text); }
+.cat-toggle { font-size: 10px; color: var(--text-tertiary); cursor: pointer; flex-shrink: 0; transition: transform 0.15s; }
+.cat-toggle.open { transform: rotate(90deg); }
+.cat-actions { display: flex; gap: 1px; opacity: 0; transition: opacity 0.15s; flex-shrink: 0; }
+.cat-header:hover .cat-actions { opacity: 1; }
+.cat-action-btn {
+  width: 18px; height: 18px; border-radius: 3px; border: none; background: transparent;
+  cursor: pointer; color: var(--text-tertiary); font-size: 12px;
+  display: flex; align-items: center; justify-content: center; transition: all 0.15s;
+}
+.cat-action-btn:hover { background: #f0f0f0; color: var(--text); }
+.cat-action-btn.del:hover { background: #fff1f0; color: var(--error); }
+.cat-batches { padding: 0 0 4px 0; }
+.cat-name-edit {
+  font-size: 11px; border: 1px solid var(--primary); border-radius: 3px;
+  padding: 1px 4px; outline: none; color: var(--text); width: 100%; max-width: 140px;
+}
+.uncategorized-label {
+  font-size: 11px; font-weight: 600; color: var(--text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.4px; padding: 6px 8px 4px;
+}
+.sidebar-cat-toolbar {
+  padding: 6px 8px; border-top: 1px solid var(--border);
+  display: flex; gap: 6px; align-items: center;
+}
+
+/* ===== CATEGORY MODAL ===== */
+.cat-select-list { display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto; }
+.cat-select-item {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  cursor: pointer; transition: all 0.15s;
+}
+.cat-select-item:hover { border-color: var(--primary); background: #f0f7ff; }
+.cat-select-item.selected { border-color: var(--primary); background: #e8f4ff; }
+.cat-select-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--primary); flex-shrink: 0; }
+.cat-select-name { font-size: 13px; font-weight: 500; color: var(--text); flex: 1; }
+.cat-select-count { font-size: 11px; color: var(--text-tertiary); flex-shrink: 0; }
+.cat-new-inline { display: flex; gap: 6px; margin-top: 8px; }
+.cat-new-inline input {
+  flex: 1; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-size: 13px; outline: none;
+}
+.cat-new-inline input:focus { border-color: var(--primary); }
 </style>
 </head>
 <body>
@@ -575,6 +631,28 @@ a:hover { text-decoration: underline; }
     <div class="modal-footer">
       <button class="btn btn-default" onclick="closeModal('import-modal')">取消</button>
       <button class="btn btn-primary" onclick="doImport()">导入</button>
+    </div>
+  </div>
+</div>
+
+<!-- Category Picker Modal (shown on upload when categories exist) -->
+<div id="cat-pick-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)cancelCatPick()">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <h3>选择数据分类</h3>
+      <button class="modal-close" onclick="cancelCatPick()">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <p style="margin-bottom:12px;color:var(--text-secondary);font-size:13px">请为此批次选择所属分类。同一分类的批次才能在历史趋势中对比。</p>
+      <div id="cat-pick-list" class="cat-select-list"></div>
+      <div class="cat-new-inline">
+        <input type="text" id="cat-pick-new-input" placeholder="或输入新分类名称..." maxlength="30" onkeydown="if(event.key==='Enter')confirmCatPickNew()">
+        <button class="btn btn-default btn-sm" onclick="confirmCatPickNew()">新建</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="cancelCatPick()">暂不分类</button>
+      <button class="btn btn-primary" onclick="confirmCatPick()">确认</button>
     </div>
   </div>
 </div>
@@ -650,7 +728,8 @@ const NEW_FORMAT_PASSTHROUGH_RENAME = {
 };
 
 // ===== STATE =====
-let batches = [];         // [{id, name, time, rows, scoreCols, isNewFormat, hasSubdim}]
+let batches = [];         // [{id, name, time, rows, scoreCols, isNewFormat, hasSubdim, categoryId}]
+let categories = [];      // [{id, name}]  — user-defined data categories
 let activeBatchId = null;
 let chartFilter = null;   // {type, value} - filter for table rows
 let distFilters = [];     // [{level:1|2|3, col, label}] - multi-select filters for dist chart
@@ -691,8 +770,9 @@ function closeModal(id) {
 
 // ===== STORAGE (IndexedDB) =====
 const DB_NAME = 'dataviz_db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;          // bumped for new categories store
 const STORE_NAME = 'batches';
+const CAT_STORE = 'categories';
 let _db = null;
 
 function openDB() {
@@ -704,6 +784,9 @@ function openDB() {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'id' });
       }
+      if (!db.objectStoreNames.contains(CAT_STORE)) {
+        db.createObjectStore(CAT_STORE, { keyPath: 'id' });
+      }
     };
     req.onsuccess = e => { _db = e.target.result; resolve(_db); };
     req.onerror = e => reject(e.target.error);
@@ -712,26 +795,29 @@ function openDB() {
 
 function saveState() {
   openDB().then(db => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    // Clear then re-write all batches (simple upsert-all strategy)
-    store.clear();
+    const tx = db.transaction([STORE_NAME, CAT_STORE], 'readwrite');
+    const bStore = tx.objectStore(STORE_NAME);
+    const cStore = tx.objectStore(CAT_STORE);
+    bStore.clear();
     batches.forEach(b => {
-      store.put({
+      bStore.put({
         id: b.id, name: b.name, time: b.time,
         rows: b.rows, scoreCols: b.scoreCols,
-        isNewFormat: b.isNewFormat, hasSubdim: b.hasSubdim
+        isNewFormat: b.isNewFormat, hasSubdim: b.hasSubdim,
+        categoryId: b.categoryId || null
       });
     });
+    cStore.clear();
+    categories.forEach(c => cStore.put({ id: c.id, name: c.name }));
     tx.onerror = () => showToast('数据保存失败，请检查浏览器存储权限', 'error');
   }).catch(() => {
-    // Fallback to localStorage if IndexedDB unavailable
     try {
-      const data = batches.map(b => ({
+      const data = { batches: batches.map(b => ({
         id: b.id, name: b.name, time: b.time,
         rows: b.rows, scoreCols: b.scoreCols,
-        isNewFormat: b.isNewFormat, hasSubdim: b.hasSubdim
-      }));
+        isNewFormat: b.isNewFormat, hasSubdim: b.hasSubdim,
+        categoryId: b.categoryId || null
+      })), categories };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch(e) {
       showToast('存储空间不足，数据未能持久化', 'error');
@@ -740,41 +826,39 @@ function saveState() {
 }
 
 function loadState() {
-  // Returns a Promise that resolves when batches are loaded
   return openDB().then(db => {
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-      const req = store.getAll();
-      req.onsuccess = e => {
-        const data = e.target.result || [];
-        if (data.length > 0) {
-          batches = data.map(b => ({
-            id: b.id || genId(),
-            name: b.name || '未命名',
-            time: b.time || '',
-            rows: b.rows || [],
-            scoreCols: b.scoreCols || [],
-            isNewFormat: !!b.isNewFormat,
-            hasSubdim: !!b.hasSubdim
+    return new Promise((resolve) => {
+      const tx = db.transaction([STORE_NAME, CAT_STORE], 'readonly');
+      const bReq = tx.objectStore(STORE_NAME).getAll();
+      const cReq = tx.objectStore(CAT_STORE).getAll();
+      let bData = null, cData = null;
+      const tryResolve = () => {
+        if (bData === null || cData === null) return;
+        if (bData.length > 0 || cData.length > 0) {
+          categories = cData.map(c => ({ id: c.id, name: c.name }));
+          batches = bData.map(b => ({
+            id: b.id || genId(), name: b.name || '未命名',
+            time: b.time || '', rows: b.rows || [],
+            scoreCols: b.scoreCols || [], isNewFormat: !!b.isNewFormat,
+            hasSubdim: !!b.hasSubdim, categoryId: b.categoryId || null
           }));
           resolve();
         } else {
-          // Migrate from localStorage if IndexedDB is empty
+          // Migrate from localStorage
           try {
             const raw = localStorage.getItem(STORAGE_KEY);
             if (raw) {
               const legacy = JSON.parse(raw);
-              batches = legacy.map(b => ({
-                id: b.id || genId(),
-                name: b.name || '未命名',
-                time: b.time || '',
-                rows: b.rows || [],
-                scoreCols: b.scoreCols || [],
-                isNewFormat: !!b.isNewFormat,
-                hasSubdim: !!b.hasSubdim
+              // Support both old array format and new {batches, categories} format
+              const legacyBatches = Array.isArray(legacy) ? legacy : (legacy.batches || []);
+              const legacyCats = Array.isArray(legacy) ? [] : (legacy.categories || []);
+              categories = legacyCats.map(c => ({ id: c.id, name: c.name }));
+              batches = legacyBatches.map(b => ({
+                id: b.id || genId(), name: b.name || '未命名',
+                time: b.time || '', rows: b.rows || [],
+                scoreCols: b.scoreCols || [], isNewFormat: !!b.isNewFormat,
+                hasSubdim: !!b.hasSubdim, categoryId: b.categoryId || null
               }));
-              // Persist migrated data to IndexedDB and remove localStorage copy
               saveState();
               localStorage.removeItem(STORAGE_KEY);
             }
@@ -782,23 +866,25 @@ function loadState() {
           resolve();
         }
       };
-      req.onerror = e => { console.error('Load failed:', e); resolve(); };
+      bReq.onsuccess = e => { bData = e.target.result || []; tryResolve(); };
+      bReq.onerror = () => { bData = []; tryResolve(); };
+      cReq.onsuccess = e => { cData = e.target.result || []; tryResolve(); };
+      cReq.onerror = () => { cData = []; tryResolve(); };
     });
   }).catch(err => {
-    // IndexedDB unavailable (e.g. private browsing in some browsers) — fall back to localStorage
     console.warn('IndexedDB unavailable, using localStorage:', err);
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        const data = JSON.parse(raw);
-        batches = data.map(b => ({
-          id: b.id || genId(),
-          name: b.name || '未命名',
-          time: b.time || '',
-          rows: b.rows || [],
-          scoreCols: b.scoreCols || [],
-          isNewFormat: !!b.isNewFormat,
-          hasSubdim: !!b.hasSubdim
+        const legacy = JSON.parse(raw);
+        const legacyBatches = Array.isArray(legacy) ? legacy : (legacy.batches || []);
+        const legacyCats = Array.isArray(legacy) ? [] : (legacy.categories || []);
+        categories = legacyCats.map(c => ({ id: c.id, name: c.name }));
+        batches = legacyBatches.map(b => ({
+          id: b.id || genId(), name: b.name || '未命名',
+          time: b.time || '', rows: b.rows || [],
+          scoreCols: b.scoreCols || [], isNewFormat: !!b.isNewFormat,
+          hasSubdim: !!b.hasSubdim, categoryId: b.categoryId || null
         }));
       }
     } catch(e) { console.error('Load state failed:', e); }
@@ -1055,6 +1141,57 @@ function cancelFieldPicker() {
   fieldPickerCallback = null;
 }
 
+// ===== CATEGORY PICKER (upload flow) =====
+let _catPickCallback = null;
+let _catPickSelected = null;  // currently highlighted category id
+
+function showCatPick(callback) {
+  _catPickCallback = callback;
+  _catPickSelected = categories.length === 1 ? categories[0].id : null;
+  renderCatPickList();
+  document.getElementById('cat-pick-new-input').value = '';
+  document.getElementById('cat-pick-modal').style.display = 'flex';
+}
+
+function renderCatPickList() {
+  const list = document.getElementById('cat-pick-list');
+  list.innerHTML = categories.map(c => {
+    const cnt = batches.filter(b => b.categoryId === c.id).length;
+    const sel = _catPickSelected === c.id ? ' selected' : '';
+    return `<div class="cat-select-item${sel}" onclick="selectCatPick('${c.id}')">
+      <span class="cat-select-dot"></span>
+      <span class="cat-select-name">${escHtml(c.name)}</span>
+      <span class="cat-select-count">${cnt} 个批次</span>
+    </div>`;
+  }).join('');
+}
+
+function selectCatPick(catId) {
+  _catPickSelected = catId;
+  renderCatPickList();
+}
+
+function confirmCatPickNew() {
+  const inp = document.getElementById('cat-pick-new-input');
+  const name = inp.value.trim();
+  if (!name) return;
+  const newCat = { id: genId(), name };
+  categories.push(newCat);
+  _catPickSelected = newCat.id;
+  inp.value = '';
+  renderCatPickList();
+}
+
+function confirmCatPick() {
+  document.getElementById('cat-pick-modal').style.display = 'none';
+  if (_catPickCallback) { _catPickCallback(_catPickSelected); _catPickCallback = null; }
+}
+
+function cancelCatPick() {
+  document.getElementById('cat-pick-modal').style.display = 'none';
+  if (_catPickCallback) { _catPickCallback(null); _catPickCallback = null; }
+}
+
 // ===== CSV UPLOAD =====
 function handleFiles(files) {
   Array.from(files).forEach(file => {
@@ -1071,7 +1208,7 @@ function handleFiles(files) {
         const { cols: detectedCols, isNew, scoreMap, videoScoreKeys } = detectScoreCols(rawRows);
         // Build subdim col index for video format
         const subdimColIndex = isNew ? buildSubdimColIndex(Object.keys(rawRows[0])) : null;
-        const finalizeImport = (finalCols) => {
+        const finalizeImport = (finalCols, categoryId) => {
           const normalizedRows = normalizeRows(rawRows, isNew, scoreMap, subdimColIndex);
           const hasSubdim = detectHasSubdim(normalizedRows);
           const time = extractTimeFromFilename(file.name);
@@ -1083,7 +1220,8 @@ function handleFiles(files) {
             rows: normalizedRows,
             scoreCols: finalCols,
             isNewFormat: isNew,
-            hasSubdim: hasSubdim
+            hasSubdim: hasSubdim,
+            categoryId: categoryId || null
           };
           batches.unshift(batch);
           activeBatchId = batch.id;
@@ -1097,12 +1235,21 @@ function handleFiles(files) {
           showToast(`已加载 ${normalizedRows.length} 条数据 (${isNew ? '新格式' : '通用格式'}${finalCols.length ? '，' + finalCols.length + '个维度' : ''})`, 'success');
         };
 
+        // Determine cols, then pick category (if categories exist)
+        const doPickCategoryThen = (finalCols) => {
+          if (categories.length === 0) {
+            finalizeImport(finalCols, null);
+          } else {
+            showCatPick(catId => finalizeImport(finalCols, catId));
+          }
+        };
+
         if (isNew) {
-          finalizeImport(detectedCols);
+          doPickCategoryThen(detectedCols);
         } else if (detectedCols.length > 0) {
-          finalizeImport(detectedCols);
+          doPickCategoryThen(detectedCols);
         } else {
-          // Auto-detect failed: show field picker
+          // Auto-detect failed: show field picker first, then category
           showFieldPicker(
             rawRows,
             [],
@@ -1112,7 +1259,7 @@ function handleFiles(files) {
                 showToast('未选择任何评分字段，批次已跳过', 'error');
                 return;
               }
-              finalizeImport(selectedCols);
+              doPickCategoryThen(selectedCols);
             }
           );
         }
@@ -1156,26 +1303,155 @@ function renderAll() {
 }
 
 // ===== SIDEBAR =====
+// Track which category groups are collapsed
+let collapsedCats = new Set();
+
 function renderSidebar() {
   const list = document.getElementById('batch-list');
   const count = document.getElementById('batch-count');
   count.textContent = `${batches.length}个`;
-  if (!batches.length) {
+  if (!batches.length && !categories.length) {
     list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-tertiary);font-size:12px">暂无批次</div>';
+    renderSidebarToolbar();
     return;
   }
-  list.innerHTML = batches.map(b => {
-    const isActive = b.id === activeBatchId;
-    return `
-    <div class="batch-item ${isActive ? 'active' : ''}" data-id="${b.id}" onclick="selectBatch('${b.id}')">
-      <div class="batch-dot"></div>
-      <div class="batch-info">
-        <div class="batch-name" id="bname-${b.id}" ondblclick="editBatchName('${b.id}',event)">${escHtml(b.name)}</div>
-        <div class="batch-meta">${b.time || ''} &middot; ${b.rows.length}条</div>
+
+  let html = '';
+
+  // Render each category group
+  categories.forEach(cat => {
+    const catBatches = batches.filter(b => b.categoryId === cat.id);
+    const isOpen = !collapsedCats.has(cat.id);
+    html += `<div class="cat-group" data-catid="${cat.id}">
+      <div class="cat-header">
+        <span class="cat-toggle ${isOpen ? 'open' : ''}" onclick="toggleCatCollapse('${cat.id}')">&#8250;</span>
+        <span class="cat-header-label" title="${escHtml(cat.name)}" ondblclick="startRenameCat('${cat.id}')">${escHtml(cat.name)}</span>
+        <span style="font-size:10px;color:var(--text-tertiary);flex-shrink:0;margin-right:2px">${catBatches.length}</span>
+        <span class="cat-actions">
+          <button class="cat-action-btn" title="重命名" onclick="startRenameCat('${cat.id}')">&#9998;</button>
+          <button class="cat-action-btn del" title="删除分类" onclick="deleteCategory('${cat.id}')">&#215;</button>
+        </span>
       </div>
-      <button class="batch-del" onclick="deleteBatch('${b.id}',event)" title="删除">&#215;</button>
+      <div class="cat-batches" style="${isOpen ? '' : 'display:none'}">
+        ${catBatches.length ? catBatches.map(b => renderBatchItem(b)).join('') : `<div style="padding:4px 16px 4px 24px;font-size:11px;color:var(--text-tertiary)">暂无批次</div>`}
+      </div>
     </div>`;
-  }).join('');
+  });
+
+  // Uncategorized batches
+  const uncatBatches = batches.filter(b => !b.categoryId);
+  if (uncatBatches.length) {
+    html += `<div class="cat-group" data-catid="__uncat__">
+      <div class="cat-header">
+        <span class="cat-toggle ${!collapsedCats.has('__uncat__') ? 'open' : ''}" onclick="toggleCatCollapse('__uncat__')">&#8250;</span>
+        <span class="cat-header-label" style="color:var(--text-tertiary)">未分类</span>
+        <span style="font-size:10px;color:var(--text-tertiary);flex-shrink:0;margin-right:2px">${uncatBatches.length}</span>
+        <span class="cat-actions"></span>
+      </div>
+      <div class="cat-batches" style="${collapsedCats.has('__uncat__') ? 'display:none' : ''}">
+        ${uncatBatches.map(b => renderBatchItem(b)).join('')}
+      </div>
+    </div>`;
+  }
+
+  list.innerHTML = html;
+  renderSidebarToolbar();
+}
+
+function renderBatchItem(b) {
+  const isActive = b.id === activeBatchId;
+  // Build category move options
+  const otherCats = categories.filter(c => c.id !== b.categoryId);
+  const moveOpts = [
+    ...(b.categoryId ? [`<option value="">— 移到未分类</option>`] : []),
+    ...otherCats.map(c => `<option value="${c.id}">${escHtml(c.name)}</option>`)
+  ].join('');
+  const moveBtn = (categories.length > 0 || b.categoryId) ? `
+    <select class="batch-move-select" title="迁移到分类" onchange="moveBatchToCategory('${b.id}',this.value);this.value=''" onclick="event.stopPropagation()" style="border:none;background:transparent;font-size:11px;color:var(--text-tertiary);cursor:pointer;padding:0 2px;max-width:20px;outline:none">
+      <option value="" disabled selected>⇄</option>
+      ${moveOpts}
+    </select>` : '';
+  return `
+  <div class="batch-item ${isActive ? 'active' : ''}" data-id="${b.id}" onclick="selectBatch('${b.id}')">
+    <div class="batch-dot"></div>
+    <div class="batch-info">
+      <div class="batch-name" id="bname-${b.id}" ondblclick="editBatchName('${b.id}',event)">${escHtml(b.name)}</div>
+      <div class="batch-meta">${b.time || ''} &middot; ${b.rows.length}条</div>
+    </div>
+    ${moveBtn}
+    <button class="batch-del" onclick="deleteBatch('${b.id}',event)" title="删除">&#215;</button>
+  </div>`;
+}
+
+function renderSidebarToolbar() {
+  // Inject new-category button into sidebar-footer area, but only once
+  let toolbar = document.getElementById('sidebar-cat-toolbar');
+  if (!toolbar) {
+    const footer = document.querySelector('.sidebar-footer');
+    toolbar = document.createElement('div');
+    toolbar.id = 'sidebar-cat-toolbar';
+    toolbar.className = 'sidebar-cat-toolbar';
+    footer.parentNode.insertBefore(toolbar, footer);
+  }
+  toolbar.innerHTML = `<button class="btn btn-default btn-sm" style="flex:1;font-size:11px" onclick="createCategory()">+ 新建分类</button>`;
+}
+
+function toggleCatCollapse(catId) {
+  if (collapsedCats.has(catId)) collapsedCats.delete(catId);
+  else collapsedCats.add(catId);
+  renderSidebar();
+}
+
+function startRenameCat(catId) {
+  const cat = categories.find(c => c.id === catId);
+  if (!cat) return;
+  const header = document.querySelector(`.cat-group[data-catid="${catId}"] .cat-header-label`);
+  if (!header) return;
+  const oldName = cat.name;
+  header.outerHTML = `<input class="cat-name-edit" id="cat-edit-${catId}" value="${escHtml(oldName)}" maxlength="30" onclick="event.stopPropagation()">`;
+  const inp = document.getElementById('cat-edit-' + catId);
+  inp.focus(); inp.select();
+  const done = () => {
+    const nv = inp.value.trim() || oldName;
+    cat.name = nv;
+    saveState();
+    renderSidebar();
+  };
+  inp.addEventListener('blur', done);
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') done(); if (e.key === 'Escape') renderSidebar(); });
+}
+
+function createCategory() {
+  const name = prompt('请输入新分类名称：', '');
+  if (!name || !name.trim()) return;
+  categories.push({ id: genId(), name: name.trim() });
+  saveState();
+  renderSidebar();
+}
+
+function deleteCategory(catId) {
+  const cat = categories.find(c => c.id === catId);
+  if (!cat) return;
+  const count = batches.filter(b => b.categoryId === catId).length;
+  const msg = count
+    ? `删除分类「${cat.name}」？其下 ${count} 个批次将变为未分类。`
+    : `删除分类「${cat.name}」？`;
+  if (!confirm(msg)) return;
+  categories = categories.filter(c => c.id !== catId);
+  batches.forEach(b => { if (b.categoryId === catId) b.categoryId = null; });
+  saveState();
+  renderSidebar();
+  showToast('分类已删除');
+}
+
+function moveBatchToCategory(batchId, catId) {
+  const b = batches.find(x => x.id === batchId);
+  if (!b) return;
+  b.categoryId = catId || null;
+  saveState();
+  renderSidebar();
+  const catName = catId ? (categories.find(c => c.id === catId)?.name || '') : '未分类';
+  showToast(`已移到「${catName}」`);
 }
 
 function escHtml(s) {
@@ -1302,6 +1578,7 @@ function buildContentHTML(batch) {
     <div class="card-header" style="cursor:pointer;user-select:none" onclick="toggleTrendExpand()">
       <h3>历史趋势对比</h3>
       <div class="card-header-actions">
+        ${(() => { const cat = categories.find(c => c.id === batch.categoryId); return cat ? `<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#e8f4ff;color:var(--primary);border:1px solid #bae0ff">${escHtml(cat.name)}</span>` : ''; })()}
         <span id="trend-collapse-hint" style="font-size:11px;color:var(--text-tertiary)">${trendExpanded ? '收起' : '点击查看详情'}</span>
         <span id="trend-collapse-arrow" style="font-size:14px;color:var(--text-tertiary);transition:transform 0.2s;display:inline-block;transform:${trendExpanded ? 'rotate(180deg)' : 'rotate(0deg)'}">&#8964;</span>
       </div>
@@ -1438,7 +1715,11 @@ function calcBatchMetricValue(b, metricKey) {
 }
 
 function getActiveTrendBatches() {
-  const sorted = [...batches].sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  const activeBatch = batches.find(b => b.id === activeBatchId);
+  const activeCatId = activeBatch ? (activeBatch.categoryId || null) : null;
+  // Only include batches from the same category as the active batch
+  const sameCat = batches.filter(b => (b.categoryId || null) === activeCatId);
+  const sorted = [...sameCat].sort((a, b) => (a.time || '').localeCompare(b.time || ''));
   return sorted.filter(b => !trendSelectedBatches || trendSelectedBatches.includes(b.id));
 }
 
@@ -2811,7 +3092,7 @@ function showShareModal() {
   ta.value = '生成中...';
   setTimeout(() => {
     try {
-      ta.value = JSON.stringify({ version: 7, batches }, null, 2);
+      ta.value = JSON.stringify({ version: 7, batches, categories }, null, 2);
     } catch(e) { ta.value = '数据过大，无法序列化'; }
   }, 50);
 }
@@ -2838,16 +3119,19 @@ function doImport() {
   try {
     const data = JSON.parse(ta.value);
     let imported = [];
-    if (data.batches) imported = data.batches;
+    let importedCats = [];
+    if (data.batches) { imported = data.batches; importedCats = data.categories || []; }
     else if (Array.isArray(data)) imported = data;
     if (!imported.length) { showToast('没有找到批次数据', 'error'); return; }
+    // Merge categories (by id dedup)
+    importedCats.forEach(c => { if (!categories.find(x => x.id === c.id)) categories.push({ id: c.id, name: c.name }); });
     imported.forEach(b => {
       if (!batches.find(x => x.id === b.id)) {
         batches.push({
           id: b.id || genId(), name: b.name || '导入批次',
           time: b.time || '', rows: b.rows || [],
           scoreCols: b.scoreCols || [], isNewFormat: !!b.isNewFormat,
-          hasSubdim: !!b.hasSubdim
+          hasSubdim: !!b.hasSubdim, categoryId: b.categoryId || null
         });
       }
     });
@@ -2860,12 +3144,12 @@ function doImport() {
 
 function clearAllData() {
   if (!confirm('确认清空全部数据？此操作不可恢复。')) return;
-  batches = []; activeBatchId = null; chartFilter = null;
+  batches = []; categories = []; activeBatchId = null; chartFilter = null;
   destroyCharts();
-  // Clear IndexedDB
   openDB().then(db => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const tx = db.transaction([STORE_NAME, CAT_STORE], 'readwrite');
     tx.objectStore(STORE_NAME).clear();
+    tx.objectStore(CAT_STORE).clear();
   }).catch(() => {});
   localStorage.removeItem(STORAGE_KEY);
   renderAll();
