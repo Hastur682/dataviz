@@ -812,6 +812,7 @@ function calcOverallScore(row, scoreCols, isNewFmt) {
     return parseFloat((all.reduce((a,b)=>a+b,0)/all.length).toFixed(2));
   }
   // Video format: apply quality rules using fuzzy col name matching
+  // Find cols by keyword matching to support different naming conventions
   const findVal = (...keywords) => {
     const col = scoreCols.find(c => keywords.some(kw => c.includes(kw)));
     return col ? vals[col] : NaN;
@@ -821,31 +822,17 @@ function calcOverallScore(row, scoreCols, isNewFmt) {
   const ae = findVal('美学');
   const db = findVal('动态基础', '基础质量');
   const ds = findVal('动态强度', '动态强');
-  const tx = findVal('文本');
-  // If we can find the 5 core dims (文本 optional), use rule-based scoring
+  // If we can find all 5 key dims, use rule-based scoring
   if ([qd,cq,ae,db,ds].every(v => !isNaN(v))) {
-    // 1分：任意子维度为1分（含文本）
-    if (all.some(x => x === 1)) return 1.00;
-    // 辅助判断文本条件：若文本字段存在则要求>=2，不存在则不约束
-    const txOk = isNaN(tx) || tx >= 2;
-    // 5分：所有子维度>=4，且2个及以上达到5分
-    if (all.every(x => x >= 4) && all.filter(x => x >= 5).length >= 2) return 5.00;
-    // 4分：除内容质量外其他子维度>=3.5，且动态基础/动态强度/文本中至少1个>=4，内容质量>=3
-    const nonCqCols = scoreCols.filter(c => !c.includes('内容质量') && !c.includes('内容'));
-    const nonCqVals = nonCqCols.map(c => vals[c]).filter(v => !isNaN(v));
-    const dbds_tx_ge4 = [db, ds].some(x => x >= 4) || (!isNaN(tx) && tx >= 4);
-    if (nonCqVals.length > 0 && nonCqVals.every(x => x >= 3.5) && dbds_tx_ge4 && cq >= 3) return 4.00;
-    // 3.5分：所有子维度>=3，且美学/动态基础/动态强度/文本中至少1个>=3.5
-    const ae_db_ds_tx_ge35 = [ae, db, ds].some(x => x >= 3.5) || (!isNaN(tx) && tx >= 3.5);
-    if (all.every(x => x >= 3) && ae_db_ds_tx_ge35) return 3.50;
-    // 3分：清晰度/内容质量均>=3，且美学/动态基础/动态强度/文本均>=2
-    if (qd >= 3 && cq >= 3 && ae >= 2 && db >= 2 && ds >= 2 && txOk) return 3.00;
-    // 2.5分：清晰度/内容质量中至少1个为2.5，且美学/动态基础/动态强度/文本均>=2
-    if ([qd, cq].some(x => x === 2.5) && ae >= 2 && db >= 2 && ds >= 2 && txOk) return 2.50;
-    // 2分：清晰度/内容质量中至少1个为2，且美学/动态基础/动态强度/文本均>=2
-    if ([qd, cq].some(x => x === 2) && ae >= 2 && db >= 2 && ds >= 2 && txOk) return 2.00;
+    if(all.some(x=>x===1)) return 1.00;
+    if(all.every(x=>x>=4) && all.filter(x=>x>=5).length>=2) return 5.00;
+    if([qd,ae,db,ds].every(x=>x>=3.5) && [db,ds].some(x=>x>=4) && cq>=3) return 4.00;
+    if(all.every(x=>x>=3) && [ae,db,ds].some(x=>x>=3.5)) return 3.50;
+    if(qd>=3 && cq>=3 && ae>=2 && db>=2 && ds>=2) return 3.00;
+    if([qd,cq].some(x=>x===2.5) && ae>=2 && db>=2 && ds>=2) return 2.50;
+    if([qd,cq].some(x=>x===2) && ae>=2 && db>=2 && ds>=2) return 2.00;
   }
-  // Fallback: any score of 1 pulls overall to 1
+  // Fallback: weighted average; any score of 1 pulls overall to 1
   if (all.some(x => x === 1)) return 1.00;
   return parseFloat((all.reduce((a,b)=>a+b,0)/all.length).toFixed(2));
 }
@@ -1159,7 +1146,7 @@ function buildContentHTML(batch) {
       <div class="stat-card-sub">条记录</div>
     </div>
     <div class="stat-card">
-      <div class="stat-card-label">&#9733; 平均整体分</div>
+      <div class="stat-card-label">&#9733; 平均综合分</div>
       <div class="stat-card-value ${avg >= 3.5 ? 'good' : avg >= 2.5 ? 'warn' : 'bad'}">${avg.toFixed(2)}</div>
       <div class="stat-card-sub">满分5分</div>
     </div>
@@ -1185,7 +1172,7 @@ function buildContentHTML(batch) {
   <div class="charts-row">
     <div class="card">
       <div class="card-header" style="flex-wrap:nowrap;gap:8px">
-        <h3 style="white-space:nowrap;flex-shrink:0">整体分情况</h3>
+        <h3 style="white-space:nowrap;flex-shrink:0">综合分情况</h3>
         <span style="font-size:11px;color:var(--text-tertiary);flex-shrink:0">全量数据</span>
       </div>
       <div class="card-body">
@@ -1255,7 +1242,7 @@ function getTrendMetrics(activeBatches) {
   activeBatches.forEach(b => (b.scoreCols || []).forEach(c => dimSet.add(c)));
   const dims = Array.from(dimSet);
   return [
-    { key: 'avg', label: '整体分', suffix: '' },
+    { key: 'avg', label: '综合分', suffix: '' },
     { key: 'lowrate', label: '低分率', suffix: '%' },
     { key: 'highrate', label: '高质率', suffix: '%' },
     ...dims.map(c => ({ key: c, label: c, suffix: '' }))
@@ -1734,7 +1721,7 @@ function renderDistChart(batch) {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            title: items => `整体分 ${items[0].label}`,
+            title: items => `综合分 ${items[0].label}`,
             label: ctx => ` ${ctx.parsed.y} 条 (${total ? (ctx.parsed.y/total*100).toFixed(1) : 0}%)`
           }
         }
@@ -2229,7 +2216,7 @@ function buildTableCols(batch) {
     // Try to find an ID column
     const idCol = ['任务明细ID','题目ID','任务编号','input.md5','input.source_id'].find(k => firstRow[k] !== undefined);
     if (idCol) cols.push({ key: idCol, label: 'ID' });
-    cols.push({ key: '_overall', label: '整体分' });
+    cols.push({ key: '_overall', label: '综合分' });
     // Show annotator and time if present
     if (firstRow['标注人'] !== undefined) cols.push({ key: '标注人', label: '标注人' });
     // Video link columns
@@ -2240,13 +2227,13 @@ function buildTableCols(batch) {
   } else {
     // Show overall first (only if scoreCols exist)
     if (batch.scoreCols.length) {
-      cols.push({ key: '_overall', label: '整体分' });
+      cols.push({ key: '_overall', label: '综合分' });
     }
     // Show score cols
     batch.scoreCols.forEach(c => cols.push({ key: c, label: c }));
     // Show other non-score non-special cols
     if (batch.rows.length) {
-      const specialKeys = new Set([...batch.scoreCols, '整体分', '_isNewFormat', ...batch.scoreCols.map(c => c + '_level2'), ...batch.scoreCols.map(c => c + '_level3')]);
+      const specialKeys = new Set([...batch.scoreCols, '综合分', '_isNewFormat', ...batch.scoreCols.map(c => c + '_level2'), ...batch.scoreCols.map(c => c + '_level3')]);
       const others = Object.keys(batch.rows[0]).filter(k =>
         !specialKeys.has(k) &&
         !k.startsWith('_') &&
