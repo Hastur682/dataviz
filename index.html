@@ -493,7 +493,8 @@ const NEW_FORMAT_PASSTHROUGH_RENAME = {
 // ===== STATE =====
 let batches = [];         // [{id, name, time, rows, scoreCols, isNewFormat, hasSubdim}]
 let activeBatchId = null;
-let chartFilter = null;   // {type, value} - filter from chart click
+let chartFilter = null;   // {type, value} - filter for table rows
+let distFilter = null;    // {level:1|2|3, col, label} - filter for dist chart only
 let sortConfig = { col: null, dir: 'asc' };
 let searchQuery = '';
 let currentPage = 1;
@@ -835,6 +836,7 @@ function handleFiles(files) {
           batches.unshift(batch);
           activeBatchId = batch.id;
           chartFilter = null;
+          distFilter = null;
           sortConfig = { col: null, dir: 'asc' };
           searchQuery = '';
           currentPage = 1;
@@ -887,6 +889,7 @@ function openDimConfig(batchId) {
       batch.scoreCols = selectedCols;
       saveState();
       chartFilter = null;
+      distFilter = null;
       renderAll();
       showToast(`已更新为 ${selectedCols.length} 个评分维度`, 'success');
     }
@@ -930,6 +933,7 @@ function selectBatch(id) {
   if (activeBatchId === id) return;
   activeBatchId = id;
   chartFilter = null;
+  distFilter = null;
   sortConfig = { col: null, dir: 'asc' };
   searchQuery = '';
   currentPage = 1;
@@ -944,6 +948,7 @@ function deleteBatch(id, e) {
     activeBatchId = batches.length ? batches[0].id : null;
   }
   chartFilter = null;
+  distFilter = null;
   currentPage = 1;
   saveState();
   renderAll();
@@ -990,6 +995,7 @@ function renderContent() {
 
   // Init charts
   setTimeout(() => {
+    renderDistFilterBar(batch);
     renderDistChart(batch);
     renderRadarChart(batch);
     renderTrendChart();
@@ -1041,7 +1047,7 @@ function buildContentHTML(batch) {
       <div class="stat-card-sub">条记录</div>
     </div>
     <div class="stat-card">
-      <div class="stat-card-label">&#9733; 平均整体分</div>
+      <div class="stat-card-label">&#9733; 平均综合分</div>
       <div class="stat-card-value ${avg >= 3.5 ? 'good' : avg >= 2.5 ? 'warn' : 'bad'}">${avg.toFixed(2)}</div>
       <div class="stat-card-sub">满分5分</div>
     </div>
@@ -1066,9 +1072,9 @@ function buildContentHTML(batch) {
   <!-- Charts Row -->
   <div class="charts-row">
     <div class="card">
-      <div class="card-header">
-        <h3>分数分布</h3>
-        ${chartFilter ? `<span class="filter-badge" onclick="clearFilter()">已过滤: ${escHtml(String(chartFilter.value))} &#215;</span>` : ''}
+      <div class="card-header" style="flex-wrap:wrap;gap:8px">
+        <h3>综合分分布</h3>
+        <div id="dist-filter-bar" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;flex:1;min-width:0"></div>
       </div>
       <div class="card-body">
         <div class="chart-wrap"><canvas id="chart-dist"></canvas></div>
@@ -1098,7 +1104,7 @@ function buildContentHTML(batch) {
       <h3>历史趋势对比</h3>
       <div class="card-header-actions">
         <div id="trend-metric-btns" class="trend-metric-btns">
-          <button class="metric-btn ${trendMetric==='avg'?'active':''}" data-metric="avg" onclick="setTrendMetric('avg')">平均整体分</button>
+          <button class="metric-btn ${trendMetric==='avg'?'active':''}" data-metric="avg" onclick="setTrendMetric('avg')">综合分</button>
           <button class="metric-btn ${trendMetric==='lowrate'?'active':''}" data-metric="lowrate" onclick="setTrendMetric('lowrate')">低分率</button>
           <button class="metric-btn ${trendMetric==='highrate'?'active':''}" data-metric="highrate" onclick="setTrendMetric('highrate')">高质率</button>
           ${getDynamicMetricBtns()}
@@ -1139,34 +1145,165 @@ function destroyCharts() {
   charts = {};
 }
 
+// ===== DIST FILTER HELPERS =====
+// Get the rows that pass the current distFilter
+function getDistFilteredRows(batch) {
+  if (!distFilter) return batch.rows;
+  const { level, col, label } = distFilter;
+  if (level === 1) {
+    // L1: filter to rows where this score col has any value
+    return batch.rows.filter(r => r[col] !== undefined && r[col] !== '' && r[col] !== null);
+  } else if (level === 2) {
+    return batch.rows.filter(r => r[col + '_level2'] === label);
+  } else if (level === 3) {
+    return batch.rows.filter(r => {
+      const l3 = r[col + '_level3'] || '';
+      return l3.split('；').some(t => t.trim() === label);
+    });
+  }
+  return batch.rows;
+}
+
+// Build dist filter bar UI and update dist chart
+function renderDistFilterBar(batch) {
+  const bar = document.getElementById('dist-filter-bar');
+  if (!bar) return;
+  bar.innerHTML = '';
+
+  // "全部" pill
+  const allBtn = document.createElement('button');
+  allBtn.className = 'metric-btn' + (!distFilter ? ' active' : '');
+  allBtn.textContent = '全部数据';
+  allBtn.style.cssText = 'font-size:11px;padding:2px 8px';
+  allBtn.onclick = () => { distFilter = null; renderDistFilterBar(batch); renderDistChart(batch); };
+  bar.appendChild(allBtn);
+
+  if (!batch.hasSubdim) return;
+
+  // L1 dim pills
+  batch.scoreCols.forEach(col => {
+    const isL1Active = distFilter && distFilter.level === 1 && distFilter.col === col && !distFilter.label;
+    const l1btn = document.createElement('button');
+    l1btn.className = 'metric-btn' + (isL1Active ? ' active' : '');
+    l1btn.textContent = col;
+    l1btn.title = `按维度「${col}」筛选`;
+    l1btn.style.cssText = 'font-size:11px;padding:2px 8px';
+    l1btn.onclick = () => {
+      distFilter = { level: 1, col, label: null };
+      chartFilter = { type: 'l1', col, label: col, value: col };
+      currentPage = 1;
+      renderDistFilterBar(batch);
+      renderDistChart(batch);
+      renderTableSection(batch);
+    };
+    bar.appendChild(l1btn);
+
+    // If this dim is L1-active, also show its L2 children
+    if (distFilter && distFilter.col === col) {
+      // Collect L2 labels
+      const l2Set = new Map();
+      batch.rows.forEach(r => {
+        const l2 = r[col + '_level2'];
+        if (l2) l2Set.set(l2, (l2Set.get(l2) || 0) + 1);
+      });
+      l2Set.forEach((cnt, l2label) => {
+        const isL2Active = distFilter.level === 2 && distFilter.label === l2label;
+        const l2btn = document.createElement('button');
+        l2btn.className = 'metric-btn' + (isL2Active ? ' active' : '');
+        l2btn.textContent = `${l2label}`;
+        l2btn.title = `${col} → ${l2label} (${cnt}条)`;
+        l2btn.style.cssText = 'font-size:10px;padding:2px 6px;background:#f5f7fa';
+        l2btn.onclick = (e) => {
+          e.stopPropagation();
+          distFilter = { level: 2, col, label: l2label };
+          chartFilter = { type: 'l2', col, label: l2label, value: l2label };
+          currentPage = 1;
+          renderDistFilterBar(batch);
+          renderDistChart(batch);
+          renderTableSection(batch);
+        };
+        bar.appendChild(l2btn);
+
+        // If this L2 is active, show its L3 children
+        if (isL2Active) {
+          const l3Set = new Map();
+          batch.rows.filter(r => r[col + '_level2'] === l2label).forEach(r => {
+            const l3 = r[col + '_level3'] || '';
+            l3.split('；').forEach(t => { t = t.trim(); if (t) l3Set.set(t, (l3Set.get(t) || 0) + 1); });
+          });
+          l3Set.forEach((cnt3, l3label) => {
+            const isL3Active = distFilter.level === 3 && distFilter.label === l3label;
+            const l3btn = document.createElement('button');
+            l3btn.className = 'metric-btn' + (isL3Active ? ' active' : '');
+            l3btn.textContent = l3label.length > 16 ? l3label.slice(0, 16) + '…' : l3label;
+            l3btn.title = `${l3label} (${cnt3}条)`;
+            l3btn.style.cssText = 'font-size:10px;padding:2px 6px;background:#e8f4ff';
+            l3btn.onclick = (e) => {
+              e.stopPropagation();
+              distFilter = { level: 3, col, label: l3label };
+              chartFilter = { type: 'l3', col, label: l3label, value: l3label };
+              currentPage = 1;
+              renderDistFilterBar(batch);
+              renderDistChart(batch);
+              renderTableSection(batch);
+            };
+            bar.appendChild(l3btn);
+          });
+        }
+      });
+    }
+  });
+
+  // Show active filter badge
+  if (distFilter && distFilter.label) {
+    const badge = document.createElement('span');
+    badge.className = 'filter-badge';
+    badge.innerHTML = `筛选: ${escHtml(distFilter.label)} &#215;`;
+    badge.style.marginLeft = '4px';
+    badge.onclick = () => {
+      distFilter = null;
+      chartFilter = null;
+      currentPage = 1;
+      renderDistFilterBar(batch);
+      renderDistChart(batch);
+      renderTableSection(batch);
+      updateFilterBadge(batch);
+    };
+    bar.appendChild(badge);
+  }
+}
+
 function renderDistChart(batch) {
   const canvas = document.getElementById('chart-dist');
   if (!canvas) return;
-  const rows = batch.rows;
+  if (charts['dist']) { try { charts['dist'].destroy(); } catch(e) {} delete charts['dist']; }
+
   const scoreCols = batch.scoreCols;
-  const scores = rows.map(r => calcOverallScore(r, scoreCols, batch.isNewFormat)).filter(v => !isNaN(v));
-  // Bins: [1,1.5), [1.5,2), [2,2.5), [2.5,3), [3,3.5), [3.5,4), [4,4.5), [4.5,5]
-  const bins = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
-  const labels = ['1-1.5', '1.5-2', '2-2.5', '2.5-3', '3-3.5', '3.5-4', '4-4.5', '4.5-5'];
-  const counts = Array(labels.length).fill(0);
-  scores.forEach(s => {
-    for (let i = 0; i < bins.length - 1; i++) {
-      if (s >= bins[i] && (s < bins[i+1] || (i === bins.length-2 && s <= bins[i+1]))) {
-        counts[i]++;
-        break;
-      }
-    }
-  });
-  const barColors = labels.map((_, i) => {
-    const mid = (bins[i] + bins[i+1]) / 2;
-    if (mid >= 3.5) return '#52c41a';
-    if (mid >= 2.5) return '#faad14';
+  const sourceRows = getDistFilteredRows(batch);
+  const scores = sourceRows.map(r => calcOverallScore(r, scoreCols, batch.isNewFormat)).filter(v => !isNaN(v));
+
+  if (!scores.length) {
+    canvas.parentElement.innerHTML = '<div class="no-data">暂无数据</div>';
+    return;
+  }
+
+  // Use actual distinct score values as bins (sorted)
+  const scoreSet = new Set(scores.map(s => parseFloat(s.toFixed(2))));
+  const bins = Array.from(scoreSet).sort((a, b) => a - b);
+  const counts = bins.map(b => scores.filter(s => Math.abs(s - b) < 0.001).length);
+
+  const barColors = bins.map(v => {
+    if (v >= 3.5) return '#52c41a';
+    if (v >= 3)   return '#1677ff';
+    if (v >= 2.5) return '#faad14';
     return '#ff4d4f';
   });
+
+  const total = scores.length;
   charts['dist'] = new Chart(canvas, {
     type: 'bar',
     data: {
-      labels,
+      labels: bins.map(String),
       datasets: [{
         label: '数量',
         data: counts,
@@ -1182,7 +1319,8 @@ function renderDistChart(batch) {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            label: ctx => ` ${ctx.parsed.y} 条 (${scores.length ? (ctx.parsed.y/scores.length*100).toFixed(1) : 0}%)`
+            title: items => `综合分 ${items[0].label}`,
+            label: ctx => ` ${ctx.parsed.y} 条 (${total ? (ctx.parsed.y/total*100).toFixed(1) : 0}%)`
           }
         }
       },
@@ -1193,22 +1331,11 @@ function renderDistChart(batch) {
       onClick(event, elements) {
         if (!elements.length) return;
         const idx = elements[0].index;
-        chartFilter = { type: 'dist', label: labels[idx], min: bins[idx], max: bins[idx+1] };
+        const scoreVal = bins[idx];
+        chartFilter = { type: 'score', label: String(scoreVal), value: scoreVal };
         currentPage = 1;
         renderTableSection(batches.find(b => b.id === activeBatchId));
-        // Update filter badge
-        const batchNow = batches.find(b => b.id === activeBatchId);
-        const header = canvas.closest('.card').querySelector('.card-header');
-        if (header) {
-          let badge = header.querySelector('.filter-badge');
-          if (!badge) {
-            badge = document.createElement('span');
-            badge.className = 'filter-badge';
-            badge.onclick = clearFilter;
-            header.appendChild(badge);
-          }
-          badge.innerHTML = `已过滤: ${escHtml(labels[idx])} &#215;`;
-        }
+        updateFilterBadge(batches.find(b => b.id === activeBatchId));
       }
     }
   });
@@ -1326,17 +1453,29 @@ function renderSubdimDist(batch) {
 }
 
 function filterByL2(col, label) {
+  distFilter = { level: 2, col, label };
   chartFilter = { type: 'l2', col, label, value: label };
   currentPage = 1;
   const batch = batches.find(b => b.id === activeBatchId);
-  if (batch) renderTableSection(batch);
+  if (batch) {
+    renderDistFilterBar(batch);
+    renderDistChart(batch);
+    renderTableSection(batch);
+    updateFilterBadge(batch);
+  }
 }
 
 function filterByL3(col, tag) {
+  distFilter = { level: 3, col, label: tag };
   chartFilter = { type: 'l3', col, label: tag, value: tag };
   currentPage = 1;
   const batch = batches.find(b => b.id === activeBatchId);
-  if (batch) renderTableSection(batch);
+  if (batch) {
+    renderDistFilterBar(batch);
+    renderDistChart(batch);
+    renderTableSection(batch);
+    updateFilterBadge(batch);
+  }
 }
 
 // ===== TREND CHART =====
@@ -1381,7 +1520,7 @@ function renderTrendChart() {
   const labels = data.map(d => d.label.length > 15 ? d.label.slice(0, 15) + '…' : d.label);
   const values = data.map(d => d.value);
 
-  const metricLabel = trendMetric === 'avg' ? '平均整体分'
+  const metricLabel = trendMetric === 'avg' ? '综合分'
     : trendMetric === 'lowrate' ? '低分率(%)'
     : trendMetric === 'highrate' ? '高质率(%)'
     : trendMetric;
@@ -1488,14 +1627,24 @@ function buildTableHTML(batch) {
 
 function getFilteredRows(batch) {
   let rows = batch.rows;
-  // Apply chart filter
   if (chartFilter) {
-    if (chartFilter.type === 'dist') {
+    if (chartFilter.type === 'score') {
+      // Exact score value match
+      const target = chartFilter.value;
+      rows = rows.filter(r => {
+        const s = calcOverallScore(r, batch.scoreCols, batch.isNewFormat);
+        return !isNaN(s) && Math.abs(s - target) < 0.001;
+      });
+    } else if (chartFilter.type === 'dist') {
+      // Legacy range filter (kept for backward compat)
       const { min, max } = chartFilter;
       rows = rows.filter(r => {
         const s = calcOverallScore(r, batch.scoreCols, batch.isNewFormat);
         return !isNaN(s) && s >= min && (s < max || (max === 5 && s <= 5));
       });
+    } else if (chartFilter.type === 'l1') {
+      const { col } = chartFilter;
+      rows = rows.filter(r => r[col] !== undefined && r[col] !== '' && r[col] !== null);
     } else if (chartFilter.type === 'l2') {
       const { col, label } = chartFilter;
       rows = rows.filter(r => r[col + '_level2'] === label);
@@ -1507,7 +1656,6 @@ function getFilteredRows(batch) {
       });
     }
   }
-  // Apply search
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
     rows = rows.filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(q)));
@@ -1571,7 +1719,7 @@ function buildTableCols(batch) {
     // Try to find an ID column
     const idCol = ['任务明细ID','题目ID','任务编号','input.md5','input.source_id'].find(k => firstRow[k] !== undefined);
     if (idCol) cols.push({ key: idCol, label: 'ID' });
-    cols.push({ key: '_overall', label: '整体分' });
+    cols.push({ key: '_overall', label: '综合分' });
     // Show annotator and time if present
     if (firstRow['标注人'] !== undefined) cols.push({ key: '标注人', label: '标注人' });
     // Video link columns
@@ -1582,13 +1730,13 @@ function buildTableCols(batch) {
   } else {
     // Show overall first (only if scoreCols exist)
     if (batch.scoreCols.length) {
-      cols.push({ key: '_overall', label: '整体分' });
+      cols.push({ key: '_overall', label: '综合分' });
     }
     // Show score cols
     batch.scoreCols.forEach(c => cols.push({ key: c, label: c }));
     // Show other non-score non-special cols
     if (batch.rows.length) {
-      const specialKeys = new Set([...batch.scoreCols, '整体分', '_isNewFormat', ...batch.scoreCols.map(c => c + '_level2'), ...batch.scoreCols.map(c => c + '_level3')]);
+      const specialKeys = new Set([...batch.scoreCols, '综合分', '_isNewFormat', ...batch.scoreCols.map(c => c + '_level2'), ...batch.scoreCols.map(c => c + '_level3')]);
       const others = Object.keys(batch.rows[0]).filter(k =>
         !specialKeys.has(k) &&
         !k.startsWith('_') &&
@@ -1771,16 +1919,15 @@ function changePageSize(val) {
 
 function clearFilter() {
   chartFilter = null;
+  distFilter = null;
   currentPage = 1;
   const batch = batches.find(b => b.id === activeBatchId);
-  if (batch) renderTableSection(batch);
-  updateFilterBadge(batch);
-  // Remove filter badge from dist chart header too
-  const distHeader = document.querySelector('#chart-dist')?.closest?.('.card')?.querySelector?.('.card-header');
-  if (distHeader) {
-    const badge = distHeader.querySelector('.filter-badge');
-    if (badge) badge.remove();
+  if (batch) {
+    renderTableSection(batch);
+    renderDistFilterBar(batch);
+    renderDistChart(batch);
   }
+  updateFilterBadge(batch);
 }
 
 // ===== SHARE / EXPORT =====
