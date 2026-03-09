@@ -420,6 +420,25 @@ a:hover { text-decoration: underline; }
   </div>
 </div>
 
+<!-- Field Picker Modal -->
+<div id="field-picker-modal" class="modal-overlay" style="display:none" onclick="if(event.target===this)cancelFieldPicker()">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-header">
+      <h3>选择评分维度字段</h3>
+      <button class="modal-close" onclick="cancelFieldPicker()">&#215;</button>
+    </div>
+    <div class="modal-body">
+      <p style="margin-bottom:4px;color:var(--text-secondary);font-size:13px">自动检测未能找到评分字段，请手动选择哪些列是评分维度（1-5分）：</p>
+      <p id="field-picker-hint" style="margin-bottom:12px;color:var(--text-tertiary);font-size:12px"></p>
+      <div id="field-picker-list" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;max-height:360px;overflow-y:auto"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-default" onclick="cancelFieldPicker()">取消</button>
+      <button class="btn btn-primary" onclick="confirmFieldPicker()">确认</button>
+    </div>
+  </div>
+</div>
+
 <script>
 'use strict';
 
@@ -427,69 +446,49 @@ a:hover { text-decoration: underline; }
 const STORAGE_KEY = 'viz_batches_v7';
 const PAGE_SIZES = [20, 50, 100, 200];
 
-// New format detection prefix
-const NEW_FORMAT_PREFIX = 'output.视频1-';
-const NEW_FORMAT_SCORE_MAP = {
-  'output.视频1-清晰度': '清晰度',
-  'output.视频1-内容质量': '内容质量',
-  'output.视频1-美学质量': '美学质量',
-  'output.视频1-动态基础质量': '动态基础质量',
-  'output.视频1-动态强度': '动态强度'
-};
-const NEW_FORMAT_KEYS = Object.keys(NEW_FORMAT_SCORE_MAP);
-const NEW_FORMAT_VALS = Object.values(NEW_FORMAT_SCORE_MAP);
+// ===== DYNAMIC FORMAT DETECTION =====
+// Detects any CSV with "output.视频1-" prefixed score columns (new video format)
+// regardless of intermediate path segments (e.g. "output.视频1-画面质量-清晰度")
 
-const NEW_FORMAT_SUBDIM_MAP = {
-    '清晰度': [
-        { score:'极低清视频', srcCol:'output.1分-极低清视频' },
-        { score:'低清视频', srcCol:'output.2分-低清视频' },
-        { score:'中低清视频', srcCol:'output.2.5分-中低清视频' },
-        { score:'正常清晰度', srcCol:null },
-        { score:'中高清视频', srcCol:null },
-        { score:'高清视频', srcCol:null },
-    ],
-    '内容质量': [
-        { score:'严重的基础质量问题', srcCol:'output.1分-严重的基础质量问题' },
-        { score:'中度基础质量问题', srcCol:'output.2分-中度基础质量问题' },
-        { score:'画面内容存在瑕疵', srcCol:'output.2.5分-画面内容存在瑕疵' },
-        { score:'画面内容基本合理，内容质量一般', srcCol:null },
-        { score:'中高内容质量', srcCol:null },
-        { score:'内容质量较高', srcCol:null },
-    ],
-    '美学质量': [
-        { score:'画面无美感', srcCol:'output.1分-画面无美感' },
-        { score:'画面美感较差', srcCol:'output.2分-画面美感较差' },
-        { score:'中低画面美感', srcCol:'output.2.5分-中低画面美感' },
-        { score:'画面美感正常', srcCol:null },
-        { score:'中高画面美感', srcCol:null },
-        { score:'画面美感较好，优质创作', srcCol:null },
-    ],
-    '动态基础质量': [
-        { score:'基础质量不合格', srcCol:'output.1分-基础质量不合格' },
-        { score:'中低动态基础质量', srcCol:'output.2分-中低动态基础质量' },
-        { score:'存在运动瑕疵', srcCol:'output.2.5分-存在运动瑕疵' },
-        { score:'正常动态', srcCol:null },
-        { score:'正常动态增强', srcCol:null },
-        { score:'复杂动态', srcCol:null },
-    ],
-    '动态强度': [
-        { score:'无动态', srcCol:'output.1分-无动态' },
-        { score:'低动态', srcCol:'output.2分-低动态' },
-        { score:'中低动态', srcCol:'output.2.5分-中低动态' },
-        { score:'正常动态', srcCol:null },
-        { score:'正常动态增强', srcCol:null },
-        { score:'高动态', srcCol:null },
-    ],
-};
+// Given all header keys, find score columns: output.视频1-...  (last segment is score name)
+function detectVideoFormatScoreCols(keys) {
+  return keys.filter(k => /^output\.视频\d+-/.test(k) && !k.includes('整体分'));
+}
+
+// Extract short display name from a score column key
+// e.g. "output.视频1-画面质量-清晰度" -> "清晰度"
+//      "output.视频1-清晰度"            -> "清晰度"
+function scoreColShortName(key) {
+  const m = key.match(/^output\.视频\d+-(.+)$/);
+  if (!m) return key;
+  const parts = m[1].split('-');
+  return parts[parts.length - 1];
+}
+
+// Build score map: { srcCol -> shortName }
+function buildScoreMap(scoreKeys) {
+  const map = {};
+  scoreKeys.forEach(k => { map[k] = scoreColShortName(k); });
+  return map;
+}
+
+// Parse subdim columns: "output.N分-xxx" where N is a score value
+// Returns array of { srcCol, score, label } for subdim lookup
+function buildSubdimColIndex(keys) {
+  const result = [];
+  keys.forEach(k => {
+    const m = k.match(/^output\.(\d+(?:\.\d+)?)分-(.+)$/);
+    if (m) result.push({ srcCol: k, score: parseFloat(m[1]), label: m[2] });
+  });
+  return result;
+}
+
+// ===== LEGACY HARDCODED CONSTANTS (kept for backward compat with saved data) =====
 const NEW_FORMAT_META_COLS = ['任务编号','题包key','任务明细ID','题目ID','标注人','标注时间','是否有效','无效原因','无效标签'];
 const NEW_FORMAT_PASSTHROUGH_COLS = ['input.cut_off_url','结果预览','当前节点','质检信息','标注版本'];
 const NEW_FORMAT_PASSTHROUGH_RENAME = {
     'output.caption是否描述出问题（漏误检内容及转场跳变等）': 'caption问题',
 };
-
-const NEW_OVERALL_FIELD = 'output.视频1-整体分';
-const NEW_ID_FIELD = 'input.编号';
-const NEW_VIDEO_FIELD = 'input.视频链接';
 
 // ===== STATE =====
 let batches = [];         // [{id, name, time, rows, scoreCols, isNewFormat, hasSubdim}]
@@ -570,30 +569,46 @@ function stripBomKeys(rows) {
 function isNewFormat(rows) {
   if (!rows || !rows.length) return false;
   const keys = Object.keys(rows[0]);
-  // Check with and without BOM
-  const bom = '\ufeff';
-  return NEW_FORMAT_KEYS.some(k =>
-    keys.includes(k) || keys.includes(bom + k)
+  return detectVideoFormatScoreCols(keys).length > 0;
+}
+
+/// Heuristic: is a field value likely to be a non-score (URL, long text, large number, etc.)?
+function looksLikeNonScoreValue(raw) {
+  if (raw == null || raw === '') return false;
+  const s = String(raw).trim();
+  if (s.startsWith('http://') || s.startsWith('https://')) return true;
+  if (s.length > 60) return true;
+  return false;
+}
+
+// Get all candidate fields from rows (excluding internal/structural keys)
+function getCandidateKeys(rows) {
+  if (!rows || !rows.length) return [];
+  return Object.keys(rows[0]).filter(k =>
+    !k.startsWith('_') &&
+    !k.endsWith('_level2') &&
+    !k.endsWith('_level3') &&
+    k.trim() !== ''
   );
 }
 
 function detectScoreCols(rows) {
   if (!rows || !rows.length) return { cols: [], isNew: false };
-  if (isNewFormat(rows)) {
-    return { cols: NEW_FORMAT_VALS.slice(), isNew: true };
+  const keys = Object.keys(rows[0]);
+  const videoScoreKeys = detectVideoFormatScoreCols(keys);
+  if (videoScoreKeys.length > 0) {
+    // Video format: use short names as scoreCols
+    const scoreMap = buildScoreMap(videoScoreKeys);
+    return { cols: Object.values(scoreMap), isNew: true, scoreMap, videoScoreKeys };
   }
-  // Old format: find columns whose values look like scores (1-5 range)
+  // General format: find columns whose values look like scores (1-5 range)
   // Support both plain numbers and "3分-xxx" style strings
   const sampleSize = Math.min(100, rows.length);
   const sample = rows.slice(0, sampleSize);
-  const keys = Object.keys(rows[0]).filter(k =>
-    !k.startsWith('_') &&
-    !k.endsWith('_level2') &&
-    !k.endsWith('_level3') &&
-    k.trim() !== '' &&
-    !/^(input\.|output\.)/.test(k)
-  );
-  const scoreCols = keys.filter(k => {
+  const candidateKeys = getCandidateKeys(rows);
+  const scoreCols = candidateKeys.filter(k => {
+    // Skip if any sample value looks like a non-score
+    if (sample.some(r => looksLikeNonScoreValue(r[k]))) return false;
     const vals = sample
       .map(r => {
         const raw = r[k];
@@ -628,46 +643,53 @@ function extractScore(val) {
 }
 
 // ===== NORMALIZE ROWS =====
-function normalizeRows(rawRows, isNew) {
+// For video format: dynamically build short-name score fields and L2/L3 subdim fields
+function normalizeRows(rawRows, isNew, scoreMap, subdimColIndex) {
   if (!isNew) {
-    // For old format: no structural changes needed, but return as-is
-    // (detectScoreCols already handles extractScore-style values in calcOverallScore)
     return rawRows;
   }
+  // scoreMap: { srcCol -> shortName }, subdimColIndex: [{srcCol, score, label}]
   return rawRows.map((raw) => {
     const row = {};
-    // Copy meta cols
-    NEW_FORMAT_META_COLS.forEach(col => { if (col in raw) row[col] = raw[col]; });
-    NEW_FORMAT_PASSTHROUGH_COLS.forEach(col => { if (col in raw) row[col] = raw[col]; });
-    Object.entries(NEW_FORMAT_PASSTHROUGH_RENAME).forEach(([src, dst]) => { if (src in raw) row[dst] = raw[src]; });
-    // Score cols with extractScore
-    Object.entries(NEW_FORMAT_SCORE_MAP).forEach(([srcCol, dstCol]) => {
-        // BOM already stripped by stripBomKeys, but keep fallback
-        const bom = '\ufeff';
-        const val = raw[srcCol] != null ? raw[srcCol] : (raw[bom + srcCol] != null ? raw[bom + srcCol] : null);
-        row[dstCol] = extractScore(val != null ? val : '');
+    // Copy all non-score cols (meta, passthrough, etc.)
+    Object.keys(raw).forEach(k => {
+      if (!(k in (scoreMap || {}))) row[k] = raw[k];
     });
-    // Subdim extraction
-    Object.entries(NEW_FORMAT_SUBDIM_MAP).forEach(([dim, tiers]) => {
-        const mainSrcCol = Object.entries(NEW_FORMAT_SCORE_MAP).find(([,d]) => d === dim)?.[0];
-        const mainRaw = mainSrcCol ? String(raw[mainSrcCol] || '').trim() : '';
-        const mainLabel = mainRaw.replace(/^\d+(?:\.\d+)?分-/, '').trim();
-        const l2Val = mainLabel || '';
-        let l3Vals = [];
-        if (l2Val) {
-            const tierDef = tiers.find(t => t.score === l2Val);
-            if (tierDef && tierDef.srcCol) {
-                const srcVal = String(raw[tierDef.srcCol] || '').trim();
-                if (srcVal) {
-                    srcVal.split(';').forEach(seg => {
-                        const label = seg.replace(/^[^:]+:/, '').trim();
-                        if (label) l3Vals.push(label);
-                    });
-                }
-            }
-            row[dim + '_level2'] = l2Val;
-            if (l3Vals.length > 0) row[dim + '_level3'] = l3Vals.join('；');
-        }
+    // Score cols: extract numeric value, store under short name
+    Object.entries(scoreMap || {}).forEach(([srcCol, shortName]) => {
+      const val = raw[srcCol] != null ? raw[srcCol] : '';
+      row[shortName] = extractScore(val);
+    });
+    // L2/L3 subdim extraction
+    // For each score col, the L2 is the label after "N分-" in the value
+    // L3 comes from the matching "output.N分-L2label" column
+    Object.entries(scoreMap || {}).forEach(([srcCol, shortName]) => {
+      const rawVal = String(raw[srcCol] || '').trim();
+      if (!rawVal) return;
+      const scoreMatch = rawVal.match(/^(\d+(?:\.\d+)?)分-(.+)$/);
+      if (!scoreMatch) return;
+      const scoreNum = parseFloat(scoreMatch[1]);
+      const l2Label = scoreMatch[2].trim();
+      row[shortName + '_level2'] = l2Label;
+      // Find L3 column: subdim col that matches this score number
+      // There may be multiple subdim cols at this score level; find by score match
+      if (subdimColIndex) {
+        const subdimCols = subdimColIndex.filter(s => s.score === scoreNum);
+        // Try to find the one whose label matches l2Label, or just use all at this score
+        let l3Parts = [];
+        subdimCols.forEach(s => {
+          const subVal = String(raw[s.srcCol] || '').trim();
+          if (!subVal) return;
+          subVal.split(';').forEach(seg => {
+            seg = seg.trim();
+            if (!seg) return;
+            // Format: "key:label" or just "label"
+            const label = seg.includes(':') ? seg.split(':').slice(1).join(':').trim() : seg;
+            if (label) l3Parts.push(label);
+          });
+        });
+        if (l3Parts.length) row[shortName + '_level3'] = l3Parts.join('；');
+      }
     });
     row._isNewFormat = true;
     return row;
@@ -690,18 +712,31 @@ function calcOverallScore(row, scoreCols, isNewFmt) {
   const all = scoreCols.map(c => vals[c]).filter(v => !isNaN(v));
   if (all.length === 0) return NaN;
   if (!isNewFmt) {
-    // Old format: simple average
     return parseFloat((all.reduce((a,b)=>a+b,0)/all.length).toFixed(2));
   }
-  // New format: use original complex rules
-  const qd=vals['清晰度'], cq=vals['内容质量'], ae=vals['美学质量'], db=vals['动态基础质量'], ds=vals['动态强度'];
-  if(all.some(x=>x===1)) return 1.00;
-  if(all.every(x=>x>=4) && all.filter(x=>x>=5).length>=2) return 5.00;
-  if([qd,ae,db,ds].every(x=>x>=3.5) && [db,ds].some(x=>x>=4) && cq>=3) return 4.00;
-  if(all.every(x=>x>=3) && [ae,db,ds].some(x=>x>=3.5)) return 3.50;
-  if(qd>=3 && cq>=3 && ae>=2 && db>=2 && ds>=2) return 3.00;
-  if([qd,cq].some(x=>x===2.5) && ae>=2 && db>=2 && ds>=2) return 2.50;
-  if([qd,cq].some(x=>x===2) && ae>=2 && db>=2 && ds>=2) return 2.00;
+  // Video format: apply quality rules using fuzzy col name matching
+  // Find cols by keyword matching to support different naming conventions
+  const findVal = (...keywords) => {
+    const col = scoreCols.find(c => keywords.some(kw => c.includes(kw)));
+    return col ? vals[col] : NaN;
+  };
+  const qd = findVal('清晰度');
+  const cq = findVal('内容质量', '内容');
+  const ae = findVal('美学');
+  const db = findVal('动态基础', '基础质量');
+  const ds = findVal('动态强度', '动态强');
+  // If we can find all 5 key dims, use rule-based scoring
+  if ([qd,cq,ae,db,ds].every(v => !isNaN(v))) {
+    if(all.some(x=>x===1)) return 1.00;
+    if(all.every(x=>x>=4) && all.filter(x=>x>=5).length>=2) return 5.00;
+    if([qd,ae,db,ds].every(x=>x>=3.5) && [db,ds].some(x=>x>=4) && cq>=3) return 4.00;
+    if(all.every(x=>x>=3) && [ae,db,ds].some(x=>x>=3.5)) return 3.50;
+    if(qd>=3 && cq>=3 && ae>=2 && db>=2 && ds>=2) return 3.00;
+    if([qd,cq].some(x=>x===2.5) && ae>=2 && db>=2 && ds>=2) return 2.50;
+    if([qd,cq].some(x=>x===2) && ae>=2 && db>=2 && ds>=2) return 2.00;
+  }
+  // Fallback: weighted average; any score of 1 pulls overall to 1
+  if (all.some(x => x === 1)) return 1.00;
   return parseFloat((all.reduce((a,b)=>a+b,0)/all.length).toFixed(2));
 }
 
@@ -728,6 +763,45 @@ function extractTimeFromFilename(name) {
   return base.slice(0, 30) || new Date().toISOString().slice(0, 10);
 }
 
+// ===== FIELD PICKER STATE =====
+let fieldPickerCallback = null; // function(selectedCols) called on confirm
+
+function showFieldPicker(rows, preSelected, hint, callback) {
+  fieldPickerCallback = callback;
+  const keys = getCandidateKeys(rows);
+  const sampleRow = rows[0] || {};
+  const hint_el = document.getElementById('field-picker-hint');
+  if (hint_el) hint_el.textContent = hint || `共 ${keys.length} 个字段，请勾选评分维度列`;
+  const list = document.getElementById('field-picker-list');
+  list.innerHTML = keys.map(k => {
+    const sampleVal = sampleRow[k] != null ? String(sampleRow[k]).slice(0, 40) : '';
+    const checked = preSelected && preSelected.includes(k) ? 'checked' : '';
+    return `<label style="display:flex;align-items:flex-start;gap:6px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;cursor:pointer;background:#fafafa;font-size:12px">
+      <input type="checkbox" value="${escHtml(k)}" ${checked} style="margin-top:2px;flex-shrink:0">
+      <span>
+        <span style="font-weight:500;color:var(--text)">${escHtml(k)}</span><br>
+        <span style="color:var(--text-tertiary)">${escHtml(sampleVal)}</span>
+      </span>
+    </label>`;
+  }).join('');
+  document.getElementById('field-picker-modal').style.display = 'flex';
+}
+
+function confirmFieldPicker() {
+  const checkboxes = document.querySelectorAll('#field-picker-list input[type=checkbox]:checked');
+  const selected = Array.from(checkboxes).map(cb => cb.value);
+  document.getElementById('field-picker-modal').style.display = 'none';
+  if (fieldPickerCallback) {
+    fieldPickerCallback(selected);
+    fieldPickerCallback = null;
+  }
+}
+
+function cancelFieldPicker() {
+  document.getElementById('field-picker-modal').style.display = 'none';
+  fieldPickerCallback = null;
+}
+
 // ===== CSV UPLOAD =====
 function handleFiles(files) {
   Array.from(files).forEach(file => {
@@ -741,41 +815,82 @@ function handleFiles(files) {
       complete(result) {
         const rawRows = stripBomKeys(result.data);
         if (!rawRows.length) { showToast('CSV 文件为空', 'error'); return; }
-        const { cols: detectedCols, isNew } = detectScoreCols(rawRows);
-        const finalCols = isNew ? NEW_FORMAT_VALS.slice() : detectedCols;
-        const normalizedRows = normalizeRows(rawRows, isNew);
-        const hasSubdim = detectHasSubdim(normalizedRows);
-        const time = extractTimeFromFilename(file.name);
-        const batchName = file.name.replace(/\.csv$/i, '');
-        if (!finalCols.length) {
-          // Fallback: show all non-special columns as potential score cols in table
-          console.warn('[detectScoreCols] No score columns detected. Keys:', Object.keys(rawRows[0]));
-          showToast(`警告：未识别到评分列，将展示全部字段。请检查CSV格式。`, 'warn', 4000);
-        }
-        const batch = {
-          id: genId(),
-          name: batchName,
-          time: time,
-          rows: normalizedRows,
-          scoreCols: finalCols,
-          isNewFormat: isNew,
-          hasSubdim: hasSubdim
+        const { cols: detectedCols, isNew, scoreMap, videoScoreKeys } = detectScoreCols(rawRows);
+        // Build subdim col index for video format
+        const subdimColIndex = isNew ? buildSubdimColIndex(Object.keys(rawRows[0])) : null;
+        const finalizeImport = (finalCols) => {
+          const normalizedRows = normalizeRows(rawRows, isNew, scoreMap, subdimColIndex);
+          const hasSubdim = detectHasSubdim(normalizedRows);
+          const time = extractTimeFromFilename(file.name);
+          const batchName = file.name.replace(/\.csv$/i, '');
+          const batch = {
+            id: genId(),
+            name: batchName,
+            time: time,
+            rows: normalizedRows,
+            scoreCols: finalCols,
+            isNewFormat: isNew,
+            hasSubdim: hasSubdim
+          };
+          batches.unshift(batch);
+          activeBatchId = batch.id;
+          chartFilter = null;
+          sortConfig = { col: null, dir: 'asc' };
+          searchQuery = '';
+          currentPage = 1;
+          saveState();
+          renderAll();
+          showToast(`已加载 ${normalizedRows.length} 条数据 (${isNew ? '新格式' : '通用格式'}${finalCols.length ? '，' + finalCols.length + '个维度' : ''})`, 'success');
         };
-        batches.unshift(batch);
-        activeBatchId = batch.id;
-        chartFilter = null;
-        sortConfig = { col: null, dir: 'asc' };
-        searchQuery = '';
-        currentPage = 1;
-        saveState();
-        renderAll();
-        showToast(`已加载 ${normalizedRows.length} 条数据 (${isNew ? '新格式' : '老格式'}${finalCols.length ? '，' + finalCols.length + '个维度' : ''})`, 'success');
+
+        if (isNew) {
+          finalizeImport(detectedCols);
+        } else if (detectedCols.length > 0) {
+          finalizeImport(detectedCols);
+        } else {
+          // Auto-detect failed: show field picker
+          showFieldPicker(
+            rawRows,
+            [],
+            `"${file.name}" 未能自动识别评分字段，请手动选择哪些列是评分维度（值应为 1-5 的数字）`,
+            (selectedCols) => {
+              if (!selectedCols.length) {
+                showToast('未选择任何评分字段，批次已跳过', 'error');
+                return;
+              }
+              finalizeImport(selectedCols);
+            }
+          );
+        }
       },
       error(err) {
         showToast(`解析失败: ${err.message}`, 'error');
       }
     });
   });
+}
+
+// ===== DIMENSION CONFIG =====
+function openDimConfig(batchId) {
+  const batch = batches.find(b => b.id === batchId);
+  if (!batch) return;
+  // For new format, don't allow reconfiguring
+  if (batch.isNewFormat) {
+    showToast('新格式批次的维度由系统自动确定，无需手动配置', '');
+    return;
+  }
+  showFieldPicker(
+    batch.rows,
+    batch.scoreCols,
+    `共 ${Object.keys(batch.rows[0] || {}).length} 个字段，当前已选 ${batch.scoreCols.length} 个评分维度`,
+    (selectedCols) => {
+      batch.scoreCols = selectedCols;
+      saveState();
+      chartFilter = null;
+      renderAll();
+      showToast(`已更新为 ${selectedCols.length} 个评分维度`, 'success');
+    }
+  );
 }
 
 // ===== RENDER ALL =====
@@ -879,6 +994,7 @@ function renderContent() {
     renderRadarChart(batch);
     renderTrendChart();
     renderTrendBatchSelector();
+    if (batch.hasSubdim) renderSubdimDist(batch);
   }, 0);
 
   // Bind table events
@@ -914,6 +1030,7 @@ function buildContentHTML(batch) {
     ${fmtBadge}
     <span class="tag">${batch.time || '未知时间'}</span>
     <span class="tag">${rows.length} 条数据</span>
+    <button class="btn btn-default btn-sm" style="margin-left:auto" onclick="openDimConfig('${batch.id}')">配置评分维度</button>
   </div>
 
   <!-- Stat Cards -->
@@ -965,6 +1082,16 @@ function buildContentHTML(batch) {
     </div>
   </div>
 
+  <!-- L2 Subdim Distribution Cards -->
+  ${batch.hasSubdim ? `
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-header">
+      <h3>各维度问题标签分布</h3>
+      <span style="font-size:12px;color:var(--text-secondary);margin-left:8px">点击标签可筛选数据</span>
+    </div>
+    <div class="card-body" id="subdim-dist-area" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">
+    </div>
+  </div>` : ''}
   <!-- Trend Card -->
   <div class="card" id="trend-card">
     <div class="card-header">
@@ -1130,6 +1257,88 @@ function renderRadarChart(batch) {
   });
 }
 
+// ===== SUBDIM DISTRIBUTION =====
+function renderSubdimDist(batch) {
+  const area = document.getElementById('subdim-dist-area');
+  if (!area) return;
+  const rows = batch.rows;
+  const scoreCols = batch.scoreCols;
+
+  // For each score dimension, build L2 distribution
+  const dimData = scoreCols.map(col => {
+    const l2Counter = {};
+    const l3Counter = {};  // nested: l2 -> { l3 -> count }
+    rows.forEach(r => {
+      const l2 = r[col + '_level2'];
+      const l3 = r[col + '_level3'];
+      if (!l2) return;
+      l2Counter[l2] = (l2Counter[l2] || 0) + 1;
+      if (l3) {
+        if (!l3Counter[l2]) l3Counter[l2] = {};
+        l3.split('；').forEach(tag => {
+          tag = tag.trim();
+          if (tag) l3Counter[l2][tag] = (l3Counter[l2][tag] || 0) + 1;
+        });
+      }
+    });
+    return { col, l2Counter, l3Counter };
+  }).filter(d => Object.keys(d.l2Counter).length > 0);
+
+  if (!dimData.length) {
+    area.innerHTML = '<div class="no-data">暂无子维度数据</div>';
+    return;
+  }
+
+  area.innerHTML = dimData.map(({ col, l2Counter, l3Counter }) => {
+    const total = Object.values(l2Counter).reduce((a,b)=>a+b,0);
+    // Sort by count desc
+    const sorted = Object.entries(l2Counter).sort((a,b)=>b[1]-a[1]);
+    const barHtml = sorted.map(([label, cnt]) => {
+      const pct = total ? (cnt/total*100).toFixed(1) : 0;
+      // Score-based color
+      const scoreMatch = label.match(/^(\d+(?:\.\d+)?)/);
+      const scoreNum = scoreMatch ? parseFloat(scoreMatch[1]) : 3;
+      const barColor = scoreNum >= 3.5 ? 'var(--success)' : scoreNum >= 3 ? '#1677ff' : scoreNum >= 2.5 ? 'var(--warning)' : 'var(--error)';
+      // L3 tags for this L2
+      const l3tags = l3Counter[label] ? Object.entries(l3Counter[label]).sort((a,b)=>b[1]-a[1]).slice(0,5) : [];
+      const l3html = l3tags.length ? `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">
+        ${l3tags.map(([t,c]) => `<span class="tag" style="cursor:pointer" onclick="filterByL3('${escHtml(col)}','${escHtml(t)}')" title="${escHtml(t)}">${escHtml(t.length>20?t.slice(0,20)+'…':t)} <b>${c}</b></span>`).join('')}
+      </div>` : '';
+      return `<div style="margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px;cursor:pointer" onclick="filterByL2('${escHtml(col)}','${escHtml(label)}')">
+          <span style="color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(label)}">${escHtml(label)}</span>
+          <span style="color:var(--text-secondary);flex-shrink:0;margin-left:8px">${cnt} (${pct}%)</span>
+        </div>
+        <div style="height:6px;background:#f0f0f0;border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px;transition:width 0.3s"></div>
+        </div>
+        ${l3html}
+      </div>`;
+    }).join('');
+    return `<div style="background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px;display:flex;justify-content:space-between">
+        <span>${escHtml(col)}</span>
+        <span style="font-size:11px;color:var(--text-tertiary);font-weight:400">${total}条有标签</span>
+      </div>
+      ${barHtml}
+    </div>`;
+  }).join('');
+}
+
+function filterByL2(col, label) {
+  chartFilter = { type: 'l2', col, label, value: label };
+  currentPage = 1;
+  const batch = batches.find(b => b.id === activeBatchId);
+  if (batch) renderTableSection(batch);
+}
+
+function filterByL3(col, tag) {
+  chartFilter = { type: 'l3', col, label: tag, value: tag };
+  currentPage = 1;
+  const batch = batches.find(b => b.id === activeBatchId);
+  if (batch) renderTableSection(batch);
+}
+
 // ===== TREND CHART =====
 function getTrendData() {
   const selected = trendSelectedBatches;
@@ -1280,12 +1489,23 @@ function buildTableHTML(batch) {
 function getFilteredRows(batch) {
   let rows = batch.rows;
   // Apply chart filter
-  if (chartFilter && chartFilter.type === 'dist') {
-    const { min, max } = chartFilter;
-    rows = rows.filter(r => {
-      const s = calcOverallScore(r, batch.scoreCols, batch.isNewFormat);
-      return !isNaN(s) && s >= min && (s < max || (max === 5 && s <= 5));
-    });
+  if (chartFilter) {
+    if (chartFilter.type === 'dist') {
+      const { min, max } = chartFilter;
+      rows = rows.filter(r => {
+        const s = calcOverallScore(r, batch.scoreCols, batch.isNewFormat);
+        return !isNaN(s) && s >= min && (s < max || (max === 5 && s <= 5));
+      });
+    } else if (chartFilter.type === 'l2') {
+      const { col, label } = chartFilter;
+      rows = rows.filter(r => r[col + '_level2'] === label);
+    } else if (chartFilter.type === 'l3') {
+      const { col, label } = chartFilter;
+      rows = rows.filter(r => {
+        const l3 = r[col + '_level3'] || '';
+        return l3.split('；').some(t => t.trim() === label);
+      });
+    }
   }
   // Apply search
   if (searchQuery) {
@@ -1346,11 +1566,18 @@ function buildTableInner(batch) {
 function buildTableCols(batch) {
   const cols = [];
   if (batch.isNewFormat) {
-    cols.push({ key: '编号', label: '编号' });
+    // Video format: show key meta cols first, then score cols
+    const firstRow = batch.rows[0] || {};
+    // Try to find an ID column
+    const idCol = ['任务明细ID','题目ID','任务编号','input.md5','input.source_id'].find(k => firstRow[k] !== undefined);
+    if (idCol) cols.push({ key: idCol, label: 'ID' });
     cols.push({ key: '_overall', label: '整体分' });
-    if (batch.rows.length && batch.rows[0]['视频链接'] !== undefined) {
-      cols.push({ key: '视频链接', label: '视频链接' });
-    }
+    // Show annotator and time if present
+    if (firstRow['标注人'] !== undefined) cols.push({ key: '标注人', label: '标注人' });
+    // Video link columns
+    const videoCol = ['input.cut_off_url', '视频链接', 'input.视频链接'].find(k => firstRow[k] !== undefined);
+    if (videoCol) cols.push({ key: videoCol, label: '视频', _isUrl: true });
+    // Score cols
     batch.scoreCols.forEach(c => cols.push({ key: c, label: c }));
   } else {
     // Show overall first (only if scoreCols exist)
@@ -1387,7 +1614,7 @@ function buildTableRow(r, cols, batch) {
       const cls = getScoreClass(overall);
       return `<td><span class="score-cell ${cls}">${isNaN(overall)?'-':overall}</span></td>`;
     }
-    if (c.key === '视频链接') {
+    if (c.key === '视频链接' || c._isUrl) {
       const v = r[c.key] || '';
       return `<td>${v ? `<a href="${escHtml(v)}" target="_blank" rel="noopener">查看</a>` : '-'}</td>`;
     }
