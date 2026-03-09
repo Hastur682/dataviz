@@ -689,36 +689,120 @@ function closeModal(id) {
   document.getElementById(id).style.display = 'none';
 }
 
-// ===== STORAGE =====
-function saveState() {
-  try {
-    const data = batches.map(b => ({
-      id: b.id, name: b.name, time: b.time,
-      rows: b.rows, scoreCols: b.scoreCols,
-      isNewFormat: b.isNewFormat, hasSubdim: b.hasSubdim
-    }));
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch(e) {
-    showToast('存储空间不足，部分数据可能未保存', 'error');
-  }
+// ===== STORAGE (IndexedDB) =====
+const DB_NAME = 'dataviz_db';
+const DB_VERSION = 1;
+const STORE_NAME = 'batches';
+let _db = null;
+
+function openDB() {
+  if (_db) return Promise.resolve(_db);
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = e => { _db = e.target.result; resolve(_db); };
+    req.onerror = e => reject(e.target.error);
+  });
 }
+
+function saveState() {
+  openDB().then(db => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    // Clear then re-write all batches (simple upsert-all strategy)
+    store.clear();
+    batches.forEach(b => {
+      store.put({
+        id: b.id, name: b.name, time: b.time,
+        rows: b.rows, scoreCols: b.scoreCols,
+        isNewFormat: b.isNewFormat, hasSubdim: b.hasSubdim
+      });
+    });
+    tx.onerror = () => showToast('数据保存失败，请检查浏览器存储权限', 'error');
+  }).catch(() => {
+    // Fallback to localStorage if IndexedDB unavailable
+    try {
+      const data = batches.map(b => ({
+        id: b.id, name: b.name, time: b.time,
+        rows: b.rows, scoreCols: b.scoreCols,
+        isNewFormat: b.isNewFormat, hasSubdim: b.hasSubdim
+      }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch(e) {
+      showToast('存储空间不足，数据未能持久化', 'error');
+    }
+  });
+}
+
 function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    const data = JSON.parse(raw);
-    batches = data.map(b => ({
-      id: b.id || genId(),
-      name: b.name || '未命名',
-      time: b.time || '',
-      rows: b.rows || [],
-      scoreCols: b.scoreCols || [],
-      isNewFormat: !!b.isNewFormat,
-      hasSubdim: !!b.hasSubdim
-    }));
-  } catch(e) {
-    console.error('Load state failed:', e);
-  }
+  // Returns a Promise that resolves when batches are loaded
+  return openDB().then(db => {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.getAll();
+      req.onsuccess = e => {
+        const data = e.target.result || [];
+        if (data.length > 0) {
+          batches = data.map(b => ({
+            id: b.id || genId(),
+            name: b.name || '未命名',
+            time: b.time || '',
+            rows: b.rows || [],
+            scoreCols: b.scoreCols || [],
+            isNewFormat: !!b.isNewFormat,
+            hasSubdim: !!b.hasSubdim
+          }));
+          resolve();
+        } else {
+          // Migrate from localStorage if IndexedDB is empty
+          try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (raw) {
+              const legacy = JSON.parse(raw);
+              batches = legacy.map(b => ({
+                id: b.id || genId(),
+                name: b.name || '未命名',
+                time: b.time || '',
+                rows: b.rows || [],
+                scoreCols: b.scoreCols || [],
+                isNewFormat: !!b.isNewFormat,
+                hasSubdim: !!b.hasSubdim
+              }));
+              // Persist migrated data to IndexedDB and remove localStorage copy
+              saveState();
+              localStorage.removeItem(STORAGE_KEY);
+            }
+          } catch(e) { console.error('Migration failed:', e); }
+          resolve();
+        }
+      };
+      req.onerror = e => { console.error('Load failed:', e); resolve(); };
+    });
+  }).catch(err => {
+    // IndexedDB unavailable (e.g. private browsing in some browsers) — fall back to localStorage
+    console.warn('IndexedDB unavailable, using localStorage:', err);
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const data = JSON.parse(raw);
+        batches = data.map(b => ({
+          id: b.id || genId(),
+          name: b.name || '未命名',
+          time: b.time || '',
+          rows: b.rows || [],
+          scoreCols: b.scoreCols || [],
+          isNewFormat: !!b.isNewFormat,
+          hasSubdim: !!b.hasSubdim
+        }));
+      }
+    } catch(e) { console.error('Load state failed:', e); }
+  });
 }
 
 // ===== CSV FORMAT DETECTION =====
@@ -2778,6 +2862,11 @@ function clearAllData() {
   if (!confirm('确认清空全部数据？此操作不可恢复。')) return;
   batches = []; activeBatchId = null; chartFilter = null;
   destroyCharts();
+  // Clear IndexedDB
+  openDB().then(db => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).clear();
+  }).catch(() => {});
   localStorage.removeItem(STORAGE_KEY);
   renderAll();
   showToast('已清空全部数据');
@@ -2812,10 +2901,11 @@ function initDropZone() {
 
 // ===== INIT =====
 function init() {
-  loadState();
-  if (batches.length && !activeBatchId) activeBatchId = batches[0].id;
-  initDropZone();
-  renderAll();
+  loadState().then(() => {
+    if (batches.length && !activeBatchId) activeBatchId = batches[0].id;
+    initDropZone();
+    renderAll();
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);
