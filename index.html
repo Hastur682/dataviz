@@ -411,17 +411,32 @@ a:hover { text-decoration: underline; }
 .tag-new { background: #e8f4ff; color: var(--primary); }
 .tag-old { background: #f6ffed; color: var(--success); }
 
+/* ===== TREND MINI / EXPANDED ===== */
+.trend-mini-wrap { height: 80px; position: relative; cursor: pointer; }
+.trend-mini-overlay {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0); transition: background 0.15s;
+}
+.trend-mini-wrap:hover .trend-mini-overlay { background: rgba(255,255,255,0.6); }
+.trend-mini-hint {
+  font-size: 12px; color: var(--primary); opacity: 0; transition: opacity 0.15s;
+  background: #e8f4ff; padding: 4px 12px; border-radius: 12px; border: 1px solid #bae0ff;
+}
+.trend-mini-wrap:hover .trend-mini-hint { opacity: 1; }
+.trend-detail-body { display: none; }
+.trend-detail-body.open { display: block; }
+
 /* ===== SUBDIM PIE ===== */
 .subdim-pie-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
 }
 .subdim-pie-card {
   background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 14px 16px 10px;
+  padding: 14px 16px 12px;
   display: flex;
   flex-direction: column;
 }
@@ -431,7 +446,7 @@ a:hover { text-decoration: underline; }
 }
 .subdim-pie-wrap {
   position: relative;
-  height: 200px;
+  height: 180px;
   flex-shrink: 0;
 }
 .subdim-pie-l3-panel {
@@ -650,6 +665,7 @@ let trendSelectedBatches = null; // null = all
 let trendHiddenMetrics = new Set(['lowrate','highrate']); // default: only show avg
 let trendSeenMetrics = new Set(['avg','lowrate','highrate']); // track which metrics have been seen (for auto-hide logic)
 let trendViewMode = 'line'; // 'bar' | 'line'
+let trendExpanded = false;  // false = collapsed (mini sparkline only)
 // State for dim-dist filter (separate from distFilters which are for the overall dist chart)
 let dimDistFilter = null; // {level:1|2|3, col, label} — single active filter for dim-dist chart
 let dimDistExpandedCol = null;
@@ -1153,8 +1169,11 @@ function renderContent() {
     renderDistChart(batch);
     renderDimDistFilterBar(batch);
     renderDimDistChart(batch);
-    renderTrendChart();
-    renderTrendBatchSelector();
+    renderTrendMiniChart();
+    if (trendExpanded) {
+      renderTrendChart();
+      renderTrendBatchSelector();
+    }
     if (batch.hasSubdim) renderSubdimDist(batch);
   }, 0);
 
@@ -1192,6 +1211,42 @@ function buildContentHTML(batch) {
     <span class="tag">${batch.time || '未知时间'}</span>
     <span class="tag">${rows.length} 条数据</span>
     <button class="btn btn-default btn-sm" style="margin-left:auto" onclick="openDimConfig('${batch.id}')">配置评分维度</button>
+  </div>
+
+  <!-- Trend Card (top, collapsed by default) -->
+  <div class="card" id="trend-card" style="margin-bottom:16px">
+    <div class="card-header" style="cursor:pointer;user-select:none" onclick="toggleTrendExpand()">
+      <h3>历史趋势对比</h3>
+      <div class="card-header-actions">
+        <span id="trend-collapse-hint" style="font-size:11px;color:var(--text-tertiary)">${trendExpanded ? '收起' : '点击查看详情'}</span>
+        <span id="trend-collapse-arrow" style="font-size:14px;color:var(--text-tertiary);transition:transform 0.2s;display:inline-block;transform:${trendExpanded ? 'rotate(180deg)' : 'rotate(0deg)'}">&#8964;</span>
+      </div>
+    </div>
+    <div class="card-body" style="padding:10px 20px 12px">
+      <div class="trend-mini-wrap" id="trend-mini-wrap" onclick="toggleTrendExpand()" title="点击展开详细趋势">
+        <canvas id="chart-trend-mini"></canvas>
+        <div class="trend-mini-overlay"><span class="trend-mini-hint">点击展开详情</span></div>
+      </div>
+    </div>
+    <div id="trend-detail-body" class="trend-detail-body${trendExpanded ? ' open' : ''}">
+      <div style="padding:0 20px 4px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding-top:12px">
+        <div id="trend-view-toggle" style="display:flex;gap:2px;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
+          <button id="trend-view-bar" onclick="event.stopPropagation();setTrendView('bar')" style="padding:3px 10px;font-size:12px;border:none;cursor:pointer;background:#fff;color:var(--text-secondary)">柱状图</button>
+          <button id="trend-view-line" onclick="event.stopPropagation();setTrendView('line')" style="padding:3px 10px;font-size:12px;border:none;cursor:pointer;background:#e8f4ff;color:var(--primary)">折线图</button>
+        </div>
+        <div id="trend-batch-selector" class="batch-selector-wrap">
+          <span class="batch-sel-label">批次：</span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="trend-compare-table-wrap" style="overflow-x:auto;margin-bottom:16px"></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+          <span style="font-size:12px;color:var(--text-secondary)">显示指标：</span>
+          <div id="trend-metric-toggles" class="trend-metric-toggle"></div>
+        </div>
+        <div class="trend-chart-wrap"><canvas id="chart-trend"></canvas></div>
+      </div>
+    </div>
   </div>
 
   <!-- Stat Cards -->
@@ -1251,34 +1306,11 @@ function buildContentHTML(batch) {
   <div class="card" style="margin-bottom:16px">
     <div class="card-header">
       <h3>标签分布情况</h3>
-      <span style="font-size:12px;color:var(--text-secondary);margin-left:8px">点击标签可筛选数据</span>
+      <span style="font-size:12px;color:var(--text-secondary);margin-left:8px">点击扇区可筛选数据</span>
     </div>
     <div class="card-body" id="subdim-dist-area" style="padding:16px 20px">
     </div>
   </div>` : ''}
-  <!-- Trend Card -->
-  <div class="card" id="trend-card">
-    <div class="card-header">
-      <h3>历史趋势对比</h3>
-      <div class="card-header-actions">
-        <div id="trend-view-toggle" style="display:flex;gap:2px;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
-          <button id="trend-view-bar" onclick="setTrendView('bar')" style="padding:3px 10px;font-size:12px;border:none;cursor:pointer;background:#fff;color:var(--text-secondary)">柱状图</button>
-          <button id="trend-view-line" onclick="setTrendView('line')" style="padding:3px 10px;font-size:12px;border:none;cursor:pointer;background:#e8f4ff;color:var(--primary)">折线图</button>
-        </div>
-        <div id="trend-batch-selector" class="batch-selector-wrap">
-          <span class="batch-sel-label">批次：</span>
-        </div>
-      </div>
-    </div>
-    <div class="card-body">
-      <div id="trend-compare-table-wrap" style="overflow-x:auto;margin-bottom:16px"></div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
-        <span style="font-size:12px;color:var(--text-secondary)">显示指标：</span>
-        <div id="trend-metric-toggles" class="trend-metric-toggle"></div>
-      </div>
-      <div class="trend-chart-wrap"><canvas id="chart-trend"></canvas></div>
-    </div>
-  </div>
 
   <!-- Table Section -->
   ${buildTableHTML(batch)}
@@ -1508,6 +1540,69 @@ function setTrendView(mode) {
   }
   renderTrendChart();
 }
+
+function toggleTrendExpand() {
+  trendExpanded = !trendExpanded;
+  const detail = document.getElementById('trend-detail-body');
+  const hint = document.getElementById('trend-collapse-hint');
+  const arrow = document.getElementById('trend-collapse-arrow');
+  if (detail) detail.classList.toggle('open', trendExpanded);
+  if (hint) hint.textContent = trendExpanded ? '收起' : '点击查看详情';
+  if (arrow) arrow.style.transform = trendExpanded ? 'rotate(180deg)' : 'rotate(0deg)';
+  if (trendExpanded) {
+    renderTrendChart();
+    renderTrendBatchSelector();
+  }
+}
+
+function renderTrendMiniChart() {
+  const canvas = document.getElementById('chart-trend-mini');
+  if (!canvas) return;
+  if (charts['trend-mini']) { try { charts['trend-mini'].destroy(); } catch(e) {} delete charts['trend-mini']; }
+
+  const activeBatches = getActiveTrendBatches();
+  if (activeBatches.length < 2) {
+    canvas.parentElement.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:80px;font-size:12px;color:var(--text-tertiary)">需要至少2个批次才能展示趋势</div>';
+    return;
+  }
+
+  const labels = activeBatches.map(b => b.name.length > 10 ? b.name.slice(0,10)+'…' : b.name);
+  const avgValues = activeBatches.map(b => calcBatchMetricValue(b, 'avg'));
+
+  charts['trend-mini'] = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: avgValues,
+        borderColor: '#1677ff',
+        backgroundColor: '#1677ff18',
+        pointBackgroundColor: '#1677ff',
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        fill: true,
+        tension: 0.3,
+        borderWidth: 1.5,
+        spanGaps: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: { label: ctx => ` 综合分: ${ctx.parsed.y}` }
+        }
+      },
+      scales: {
+        x: { display: true, ticks: { font: { size: 10 }, maxRotation: 20 }, grid: { display: false } },
+        y: { display: true, ticks: { font: { size: 10 }, maxTicksLimit: 4 }, grid: { color: '#f5f5f5' } }
+      }
+    }
+  });
+}
+
 
 function renderTrendBatchSelector() {
   const wrap = document.getElementById('trend-batch-selector');
@@ -2062,6 +2157,22 @@ const PIE_COLORS = [
   '#f759ab','#36cfc9','#73d13d','#ffd666','#ff7a45'
 ];
 
+// Helper: show L3 panel for a given L2 index
+function showL3Panel(l3Panel, l2label, color, l3map, l2cnt, col) {
+  if (!l3map || l3map.size === 0) {
+    l3Panel.innerHTML = `<div class="l3-title"><span class="l3-color-dot" style="background:${color}"></span>${escHtml(l2label)} <span style="font-weight:400;color:var(--text-secondary)">(${l2cnt}条)</span></div><div style="color:var(--text-tertiary);font-size:11px;margin-top:4px">暂无三级标签数据</div>`;
+    return;
+  }
+  // L3 pct is relative to this L2's count (= l2cnt), which is relative to the L1 total
+  const l3sorted = Array.from(l3map.entries()).sort((a,b)=>b[1]-a[1]);
+  const tagsHtml = l3sorted.map(([tag, cnt]) => {
+    const pct = l2cnt ? (cnt / l2cnt * 100).toFixed(1) : 0;
+    const shortTag = tag.length > 18 ? tag.slice(0,18)+'…' : tag;
+    return `<span class="l3-tag-item" onclick="filterByL3('${escHtml(col)}','${escHtml(tag)}')" title="${escHtml(tag)} (${cnt}条, 占该二级${pct}%)">${escHtml(shortTag)}<span class="l3-tag-cnt">${pct}%</span></span>`;
+  }).join('');
+  l3Panel.innerHTML = `<div class="l3-title"><span class="l3-color-dot" style="background:${color}"></span>${escHtml(l2label)} <span style="font-weight:400;color:var(--text-secondary)">(${l2cnt}条)</span></div><div class="l3-tags">${tagsHtml}</div>`;
+}
+
 function renderSubdimDist(batch) {
   const area = document.getElementById('subdim-dist-area');
   if (!area) return;
@@ -2112,6 +2223,9 @@ function renderSubdimDist(batch) {
     const counts = sorted.map(([,c]) => c);
     const colors = labels.map((_, i) => PIE_COLORS[i % PIE_COLORS.length]);
 
+    // Currently selected L2 index for L3 panel
+    let selectedIdx = null;
+
     const card = document.createElement('div');
     card.className = 'subdim-pie-card';
 
@@ -2125,7 +2239,7 @@ function renderSubdimDist(batch) {
     const wrap = document.createElement('div');
     wrap.className = 'subdim-pie-wrap';
     const canvasEl = document.createElement('canvas');
-    const chartId = 'subdim-pie-' + col.replace(/\s/g,'_');
+    const chartId = 'subdim-pie-' + col.replace(/[\s/]/g,'_');
     canvasEl.id = chartId;
     wrap.appendChild(canvasEl);
     card.appendChild(wrap);
@@ -2133,12 +2247,51 @@ function renderSubdimDist(batch) {
     // L3 detail panel
     const l3Panel = document.createElement('div');
     l3Panel.className = 'subdim-pie-l3-panel';
-    l3Panel.innerHTML = `<div class="subdim-pie-l3-placeholder">鼠标悬停在扇区上查看三级标签</div>`;
+    l3Panel.innerHTML = `<div class="subdim-pie-l3-placeholder">点击扇区或下方标签查看三级标签</div>`;
     card.appendChild(l3Panel);
 
+    // Text legend list (clickable, solves small-slice problem)
+    const legendList = document.createElement('div');
+    legendList.style.cssText = 'margin-top:10px;display:flex;flex-direction:column;gap:3px;';
+
+    sorted.forEach(([l2label, cnt], i) => {
+      const pct = total ? (cnt/total*100).toFixed(1) : 0;
+      const color = colors[i];
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:4px;cursor:pointer;transition:background 0.15s;font-size:11px;';
+      row.title = `${l2label}: ${cnt}条 (${pct}%)`;
+      // color dot + label text + pct
+      const maxLabelLen = 20;
+      const shortLabel = l2label.length > maxLabelLen ? l2label.slice(0, maxLabelLen) + '…' : l2label;
+      row.innerHTML = `<span style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0;display:inline-block"></span>`
+        + `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)">${escHtml(shortLabel)}</span>`
+        + `<span style="color:var(--text-secondary);flex-shrink:0;white-space:nowrap">${cnt} (${pct}%)</span>`;
+      row.addEventListener('mouseover', () => row.style.background = '#f5f7fa');
+      row.addEventListener('mouseout', () => row.style.background = selectedIdx === i ? '#e8f4ff' : '');
+      row.addEventListener('click', () => {
+        // Toggle L3 panel
+        if (selectedIdx === i) {
+          selectedIdx = null;
+          l3Panel.innerHTML = `<div class="subdim-pie-l3-placeholder">点击扇区或下方标签查看三级标签</div>`;
+          legendList.querySelectorAll('div').forEach(r => r.style.background = '');
+        } else {
+          selectedIdx = i;
+          legendList.querySelectorAll('div').forEach((r, ri) => r.style.background = ri === i ? '#e8f4ff' : '');
+          showL3Panel(l3Panel, l2label, color, l3Counter.get(l2label), cnt, col);
+        }
+        // Also highlight chart slice
+        if (charts[chartId]) {
+          const meta = charts[chartId].getDatasetMeta(0);
+          meta.data.forEach((arc, ai) => { arc.options.offset = ai === i && selectedIdx === i ? 12 : 0; });
+          charts[chartId].update('none');
+        }
+      });
+      legendList.appendChild(row);
+    });
+    card.appendChild(legendList);
     grid.appendChild(card);
 
-    // Create pie chart after DOM insertion (need requestAnimationFrame)
+    // Create pie chart
     requestAnimationFrame(() => {
       const ctx = canvasEl.getContext('2d');
       const chart = new Chart(ctx, {
@@ -2156,71 +2309,37 @@ function renderSubdimDist(batch) {
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          cutout: '50%',
+          cutout: '52%',
           plugins: {
-            legend: {
-              position: 'right',
-              labels: {
-                font: { size: 11 },
-                color: '#595959',
-                padding: 8,
-                boxWidth: 12,
-                boxHeight: 12,
-                generateLabels(chart) {
-                  const data = chart.data;
-                  return data.labels.map((label, i) => {
-                    const cnt = data.datasets[0].data[i];
-                    const pct = total ? (cnt/total*100).toFixed(1) : 0;
-                    const shortLabel = label.length > 12 ? label.slice(0,12)+'…' : label;
-                    return {
-                      text: `${shortLabel} ${pct}%`,
-                      fillStyle: colors[i],
-                      strokeStyle: '#fff',
-                      lineWidth: 1,
-                      index: i,
-                      hidden: false
-                    };
-                  });
-                }
-              }
-            },
+            legend: { display: false },  // use custom legend list below
             tooltip: {
               callbacks: {
                 label(ctx) {
                   const cnt = ctx.parsed;
                   const pct = total ? (cnt/total*100).toFixed(1) : 0;
                   return ` ${ctx.label}: ${cnt} 条 (${pct}%)`;
-                }
+                },
+                title(items) { return items[0].label; }
               }
             }
           },
           onClick(evt, elements) {
             if (!elements.length) return;
             const idx = elements[0].index;
-            filterByL2(col, labels[idx]);
+            if (selectedIdx === idx) {
+              // deselect
+              selectedIdx = null;
+              l3Panel.innerHTML = `<div class="subdim-pie-l3-placeholder">点击扇区或下方标签查看三级标签</div>`;
+              legendList.querySelectorAll('div').forEach(r => r.style.background = '');
+            } else {
+              selectedIdx = idx;
+              legendList.querySelectorAll('div').forEach((r, ri) => r.style.background = ri === idx ? '#e8f4ff' : '');
+              legendList.querySelectorAll('div')[idx]?.scrollIntoView({ block: 'nearest' });
+              showL3Panel(l3Panel, labels[idx], colors[idx], l3Counter.get(labels[idx]), counts[idx], col);
+            }
           },
           onHover(evt, elements) {
             canvasEl.style.cursor = elements.length ? 'pointer' : 'default';
-            if (!elements.length) {
-              l3Panel.innerHTML = `<div class="subdim-pie-l3-placeholder">鼠标悬停在扇区上查看三级标签</div>`;
-              return;
-            }
-            const idx = elements[0].index;
-            const l2label = labels[idx];
-            const color = colors[idx];
-            const l3map = l3Counter.get(l2label);
-            if (!l3map || l3map.size === 0) {
-              l3Panel.innerHTML = `<div class="subdim-pie-l3-panel"><div class="l3-title"><span class="l3-color-dot" style="background:${color}"></span>${escHtml(l2label)}</div><div style="color:var(--text-tertiary);font-size:11px">暂无三级标签数据</div></div>`;
-              return;
-            }
-            const l3total = Array.from(l3map.values()).reduce((a,b)=>a+b,0);
-            const l3sorted = Array.from(l3map.entries()).sort((a,b)=>b[1]-a[1]);
-            const tagsHtml = l3sorted.map(([tag, cnt]) => {
-              const pct = l3total ? (cnt/l3total*100).toFixed(1) : 0;
-              const shortTag = tag.length > 18 ? tag.slice(0,18)+'…' : tag;
-              return `<span class="l3-tag-item" onclick="filterByL3('${escHtml(col)}','${escHtml(tag)}')" title="${escHtml(tag)} (${cnt}条, ${pct}%)">${escHtml(shortTag)}<span class="l3-tag-cnt">${pct}%</span></span>`;
-            }).join('');
-            l3Panel.innerHTML = `<div class="l3-title"><span class="l3-color-dot" style="background:${color}"></span>${escHtml(l2label)} <span style="font-weight:400;color:var(--text-secondary)">(${counts[idx]}条)</span></div><div class="l3-tags">${tagsHtml}</div>`;
           }
         }
       });
@@ -2388,6 +2507,9 @@ function buildTableCols(batch) {
     // Video link columns
     const videoCol = ['input.cut_off_url', '视频链接', 'input.视频链接'].find(k => firstRow[k] !== undefined);
     if (videoCol) cols.push({ key: videoCol, label: '视频', _isUrl: true });
+    // Task page link column (after video)
+    const taskPageCol = ['作业链接', 'input.task_url', 'task_url', '作业页面', 'input.作业链接'].find(k => firstRow[k] !== undefined);
+    if (taskPageCol) cols.push({ key: taskPageCol, label: '作业页面', _isUrl: true });
     // Score cols
     batch.scoreCols.forEach(c => cols.push({ key: c, label: c }));
   } else {
