@@ -412,19 +412,75 @@ a:hover { text-decoration: underline; }
 .tag-old { background: #f6ffed; color: var(--success); }
 
 /* ===== TREND MINI / EXPANDED ===== */
-.trend-mini-wrap { height: 80px; position: relative; cursor: pointer; }
-.trend-mini-overlay {
-  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-  background: rgba(255,255,255,0); transition: background 0.15s;
+.trend-mini-bar {
+  padding: 0 20px 14px;
+  cursor: pointer;
+  position: relative;
 }
-.trend-mini-wrap:hover .trend-mini-overlay { background: rgba(255,255,255,0.6); }
-.trend-mini-hint {
-  font-size: 12px; color: var(--primary); opacity: 0; transition: opacity 0.15s;
-  background: #e8f4ff; padding: 4px 12px; border-radius: 12px; border: 1px solid #bae0ff;
+.trend-mini-bar:hover .trend-mini-expand-hint { opacity: 1; }
+.trend-mini-expand-hint {
+  position: absolute; right: 20px; bottom: 16px;
+  font-size: 11px; color: var(--primary); opacity: 0;
+  transition: opacity 0.2s;
+  background: #e8f4ff; padding: 2px 10px; border-radius: 10px; border: 1px solid #bae0ff;
+  pointer-events: none;
 }
-.trend-mini-wrap:hover .trend-mini-hint { opacity: 1; }
-.trend-detail-body { display: none; }
-.trend-detail-body.open { display: block; }
+.trend-mini-svg-wrap {
+  width: 100%; overflow: visible;
+}
+/* SVG draw-on animation */
+@keyframes trendLineDraw {
+  from { stroke-dashoffset: var(--dash-len, 1000); }
+  to   { stroke-dashoffset: 0; }
+}
+@keyframes trendFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes trendDotPop {
+  0%   { r: 0; opacity: 0; }
+  60%  { r: 6px; opacity: 1; }
+  100% { r: 4px; opacity: 1; }
+}
+.trend-mini-line {
+  fill: none;
+  stroke: #1677ff;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: trendLineDraw 0.9s cubic-bezier(0.4,0,0.2,1) forwards;
+}
+.trend-mini-area {
+  animation: trendFadeIn 0.7s 0.4s ease both;
+}
+.trend-mini-dot {
+  fill: #fff;
+  stroke: #1677ff;
+  stroke-width: 2;
+  cursor: pointer;
+  transition: r 0.15s, fill 0.15s;
+}
+.trend-mini-dot:hover { fill: #1677ff; r: 5px; }
+.trend-mini-dot-group { animation: trendFadeIn 0.4s ease both; }
+/* Tooltip */
+.trend-mini-tooltip {
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+/* Expand / collapse animation */
+.trend-detail-body {
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height 0.38s cubic-bezier(0.4,0,0.2,1);
+}
+.trend-detail-body.open {
+  max-height: 900px;
+}
+/* no-data state */
+.trend-mini-empty {
+  height: 64px; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; color: var(--text-tertiary); gap: 6px;
+}
 
 /* ===== SUBDIM PIE ===== */
 .subdim-pie-grid {
@@ -1583,11 +1639,9 @@ function buildContentHTML(batch) {
         <span id="trend-collapse-arrow" style="font-size:14px;color:var(--text-tertiary);transition:transform 0.2s;display:inline-block;transform:${trendExpanded ? 'rotate(180deg)' : 'rotate(0deg)'}">&#8964;</span>
       </div>
     </div>
-    <div class="card-body" style="padding:10px 20px 12px">
-      <div class="trend-mini-wrap" id="trend-mini-wrap" onclick="toggleTrendExpand()" title="点击展开详细趋势">
-        <canvas id="chart-trend-mini"></canvas>
-        <div class="trend-mini-overlay"><span class="trend-mini-hint">点击展开详情</span></div>
-      </div>
+    <div class="trend-mini-bar" id="trend-mini-wrap" onclick="toggleTrendExpand()">
+      <div id="trend-mini-svg-root"></div>
+      <span class="trend-mini-expand-hint">${trendExpanded ? '收起详情' : '点击展开详情'}</span>
     </div>
     <div id="trend-detail-body" class="trend-detail-body${trendExpanded ? ' open' : ''}">
       <div style="padding:0 20px 4px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding-top:12px">
@@ -1911,9 +1965,11 @@ function toggleTrendExpand() {
   const detail = document.getElementById('trend-detail-body');
   const hint = document.getElementById('trend-collapse-hint');
   const arrow = document.getElementById('trend-collapse-arrow');
+  const miniHint = document.querySelector('.trend-mini-expand-hint');
   if (detail) detail.classList.toggle('open', trendExpanded);
   if (hint) hint.textContent = trendExpanded ? '收起' : '点击查看详情';
   if (arrow) arrow.style.transform = trendExpanded ? 'rotate(180deg)' : 'rotate(0deg)';
+  if (miniHint) miniHint.textContent = trendExpanded ? '收起详情' : '点击展开详情';
   if (trendExpanded) {
     renderTrendChart();
     renderTrendBatchSelector();
@@ -1921,53 +1977,185 @@ function toggleTrendExpand() {
 }
 
 function renderTrendMiniChart() {
-  const canvas = document.getElementById('chart-trend-mini');
-  if (!canvas) return;
+  const root = document.getElementById('trend-mini-svg-root');
+  if (!root) return;
+  // Destroy old Chart.js instance if any
   if (charts['trend-mini']) { try { charts['trend-mini'].destroy(); } catch(e) {} delete charts['trend-mini']; }
 
   const activeBatches = getActiveTrendBatches();
+
   if (activeBatches.length < 2) {
-    canvas.parentElement.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:80px;font-size:12px;color:var(--text-tertiary)">需要至少2个批次才能展示趋势</div>';
+    root.innerHTML = `<div class="trend-mini-empty">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="flex-shrink:0">
+        <path d="M2 12 L6 7 L9 9 L14 4" stroke="#bfbfbf" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="14" cy="4" r="1.5" fill="#bfbfbf"/>
+      </svg>
+      <span>上传更多同分类批次后可展示趋势折线</span>
+    </div>`;
     return;
   }
 
-  const labels = activeBatches.map(b => b.name.length > 10 ? b.name.slice(0,10)+'…' : b.name);
-  const avgValues = activeBatches.map(b => calcBatchMetricValue(b, 'avg'));
+  const vals = activeBatches.map(b => calcBatchMetricValue(b, 'avg'));
+  const labels = activeBatches.map(b => b.name.length > 8 ? b.name.slice(0, 8) + '…' : b.name);
+  const n = vals.length;
 
-  charts['trend-mini'] = new Chart(canvas.getContext('2d'), {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        data: avgValues,
-        borderColor: '#1677ff',
-        backgroundColor: '#1677ff18',
-        pointBackgroundColor: '#1677ff',
-        pointRadius: 3,
-        pointHoverRadius: 5,
-        fill: true,
-        tension: 0.3,
-        borderWidth: 1.5,
-        spanGaps: true
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: { label: ctx => ` 综合分: ${ctx.parsed.y}` }
-        }
-      },
-      scales: {
-        x: { display: true, ticks: { font: { size: 10 }, maxRotation: 20 }, grid: { display: false } },
-        y: { display: true, ticks: { font: { size: 10 }, maxTicksLimit: 4 }, grid: { color: '#f5f5f5' } }
-      }
+  // Layout constants
+  const W = 600, H = 88;
+  const padL = 10, padR = 110, padT = 14, padB = 26;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+
+  const validVals = vals.filter(v => v !== null);
+  const minV = validVals.length ? Math.min(...validVals) : 0;
+  const maxV = validVals.length ? Math.max(...validVals) : 5;
+  const range = maxV - minV || 1;
+
+  const xOf = i => padL + (i / (n - 1)) * chartW;
+  const yOf = v => v === null ? null : padT + (1 - (v - minV) / range) * chartH;
+
+  // Build smooth path points
+  const pts = vals.map((v, i) => ({ x: xOf(i), y: yOf(v), v }));
+
+  // Catmull-Rom to cubic bezier path
+  function catmullToCubic(points) {
+    const segs = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      const p0 = points[Math.max(0, i - 1)];
+      const p1 = points[i];
+      const p2 = points[i + 1];
+      const p3 = points[Math.min(points.length - 1, i + 2)];
+      const cp1x = p1.x + (p2.x - p0.x) / 6;
+      const cp1y = p1.y + (p2.y - p0.y) / 6;
+      const cp2x = p2.x - (p3.x - p1.x) / 6;
+      const cp2y = p2.y - (p3.y - p1.y) / 6;
+      segs.push(`C ${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`);
     }
-  });
+    return segs.join(' ');
+  }
+
+  const validPts = pts.filter(p => p.y !== null);
+  const pathD = validPts.length > 1
+    ? `M ${validPts[0].x.toFixed(1)},${validPts[0].y.toFixed(1)} ${catmullToCubic(validPts)}`
+    : '';
+
+  const areaD = validPts.length > 1
+    ? `${pathD} L ${validPts[validPts.length-1].x.toFixed(1)},${(padT+chartH).toFixed(1)} L ${validPts[0].x.toFixed(1)},${(padT+chartH).toFixed(1)} Z`
+    : '';
+
+  // Approximate path length for dash animation
+  let approxLen = 0;
+  for (let i = 1; i < validPts.length; i++) {
+    const dx = validPts[i].x - validPts[i-1].x;
+    const dy = validPts[i].y - validPts[i-1].y;
+    approxLen += Math.sqrt(dx*dx + dy*dy);
+  }
+
+  // Trend summary: last value + delta
+  const lastVal = vals[n - 1];
+  const prevVal = vals[n - 2];
+  const delta = (lastVal !== null && prevVal !== null) ? lastVal - prevVal : null;
+  const deltaStr = delta !== null ? (delta >= 0 ? `+${delta.toFixed(2)}` : delta.toFixed(2)) : '';
+  const deltaColor = delta === null ? '#8c8c8c' : delta > 0 ? '#52c41a' : delta < 0 ? '#ff4d4f' : '#8c8c8c';
+  const arrowPath = delta === null ? '' : delta > 0
+    ? 'M4,10 L8,3 L12,10'
+    : delta < 0
+    ? 'M4,3 L8,10 L12,3'
+    : 'M3,6.5 L13,6.5';
+
+  // Unique gradient id per render
+  const gradId = 'tg_' + Date.now();
+
+  // Build dots SVG with staggered animation delay
+  const dotsHtml = pts.map((p, i) => {
+    if (p.y === null) return '';
+    const delay = `${0.3 + i * 0.08}s`;
+    const isLast = i === n - 1;
+    return `
+    <g class="trend-mini-dot-group" style="animation-delay:${delay}">
+      <circle class="trend-mini-dot${isLast ? ' trend-mini-dot-last' : ''}"
+        cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${isLast ? '4' : '3.5'}"
+        ${isLast ? 'stroke="#1677ff" stroke-width="2.5" fill="#fff"' : ''}
+        onmouseenter="trendMiniShowTip(this,'${escHtml(activeBatches[i].name)}',${p.v?.toFixed(2)})"
+        onmouseleave="trendMiniHideTip()"
+      />
+    </g>`;
+  }).join('');
+
+  // Labels below x-axis (only first, middle, last to avoid crowding)
+  const labelIdxs = n <= 4 ? [...Array(n).keys()] : [0, Math.floor((n-1)/2), n-1];
+  const xlabels = labelIdxs.map(i => {
+    const p = pts[i];
+    if (!p || p.y === null) return '';
+    return `<text x="${p.x.toFixed(1)}" y="${(H-2).toFixed(1)}" text-anchor="middle"
+      font-size="10" fill="#8c8c8c">${escHtml(labels[i])}</text>`;
+  }).join('');
+
+  root.innerHTML = `
+  <div style="display:flex;align-items:center;gap:0">
+    <svg viewBox="0 0 ${W} ${H}" class="trend-mini-svg-wrap" style="flex:1;min-width:0;height:${H}px"
+         onmouseleave="trendMiniHideTip()">
+      <defs>
+        <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#1677ff" stop-opacity="0.18"/>
+          <stop offset="100%" stop-color="#1677ff" stop-opacity="0.01"/>
+        </linearGradient>
+      </defs>
+      <!-- area fill -->
+      ${areaD ? `<path class="trend-mini-area" d="${areaD}" fill="url(#${gradId})"/>` : ''}
+      <!-- line -->
+      ${pathD ? `<path class="trend-mini-line" d="${pathD}"
+        style="stroke-dasharray:${approxLen.toFixed(0)};stroke-dashoffset:${approxLen.toFixed(0)};--dash-len:${approxLen.toFixed(0)};animation-duration:${Math.max(0.6, approxLen/800).toFixed(2)}s"/>` : ''}
+      <!-- dots -->
+      ${dotsHtml}
+      <!-- x labels -->
+      ${xlabels}
+      <!-- floating tooltip -->
+      <g id="trend-mini-tip" class="trend-mini-tooltip" opacity="0">
+        <rect id="trend-mini-tip-bg" rx="4" fill="#1f1f1f" opacity="0.85"/>
+        <text id="trend-mini-tip-text" font-size="11" fill="#fff" dominant-baseline="middle"></text>
+      </g>
+    </svg>
+    <!-- right summary panel -->
+    <div style="flex-shrink:0;width:96px;padding:0 0 0 12px;display:flex;flex-direction:column;align-items:flex-start;gap:2px;border-left:1px solid var(--border)">
+      <div style="font-size:10px;color:var(--text-tertiary);line-height:1.3">最新批次</div>
+      <div style="font-size:22px;font-weight:700;color:var(--text);line-height:1.2">${lastVal !== null ? lastVal.toFixed(2) : '—'}</div>
+      ${delta !== null ? `
+      <div style="display:flex;align-items:center;gap:3px">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+          <path d="${arrowPath}" stroke="${deltaColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+        <span style="font-size:12px;font-weight:600;color:${deltaColor}">${deltaStr}</span>
+      </div>` : ''}
+      <div style="font-size:10px;color:var(--text-tertiary);margin-top:1px">${n} 个批次</div>
+    </div>
+  </div>`;
 }
 
+function trendMiniShowTip(dot, name, val) {
+  const tip = document.getElementById('trend-mini-tip');
+  const tipText = document.getElementById('trend-mini-tip-text');
+  const tipBg = document.getElementById('trend-mini-tip-bg');
+  if (!tip || !tipText || !tipBg) return;
+  const label = `${name}  ${val ?? '—'}`;
+  tipText.textContent = label;
+  // Position above dot
+  const cx = parseFloat(dot.getAttribute('cx'));
+  const cy = parseFloat(dot.getAttribute('cy'));
+  const tw = label.length * 6.5 + 12;
+  const th = 20;
+  const tx = Math.max(2, cx - tw / 2);
+  const ty = cy - th - 6;
+  tipBg.setAttribute('x', tx); tipBg.setAttribute('y', ty);
+  tipBg.setAttribute('width', tw); tipBg.setAttribute('height', th);
+  tipText.setAttribute('x', tx + tw / 2);
+  tipText.setAttribute('y', ty + th / 2);
+  tipText.setAttribute('text-anchor', 'middle');
+  tip.setAttribute('opacity', '1');
+}
+function trendMiniHideTip() {
+  const tip = document.getElementById('trend-mini-tip');
+  if (tip) tip.setAttribute('opacity', '0');
+}
 
 function renderTrendBatchSelector() {
   const wrap = document.getElementById('trend-batch-selector');
