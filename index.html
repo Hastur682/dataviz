@@ -165,17 +165,23 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC'
 canvas { display: block; }
 
 /* ===== TREND ===== */
-.trend-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.trend-metric-btns { display: flex; gap: 4px; flex-wrap: wrap; }
-.metric-btn {
-  padding: 3px 10px; font-size: 12px; border-radius: 100px;
-  border: 1px solid var(--border); background: #fff;
-  cursor: pointer; color: var(--text-secondary);
-  transition: all 0.15s; white-space: nowrap;
+.trend-chart-wrap { height: 300px; }
+.trend-compare-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 16px; }
+.trend-compare-table th {
+  padding: 8px 12px; background: #fafafa; border-bottom: 2px solid var(--border);
+  font-weight: 600; color: var(--text-secondary); text-align: center; white-space: nowrap;
 }
-.metric-btn:hover { border-color: var(--primary); color: var(--primary); }
-.metric-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
-.trend-chart-wrap { height: 260px; }
+.trend-compare-table th:first-child { text-align: left; }
+.trend-compare-table td {
+  padding: 8px 12px; border-bottom: 1px solid var(--border); text-align: center; white-space: nowrap;
+}
+.trend-compare-table td:first-child { text-align: left; font-weight: 500; }
+.trend-compare-table tr:last-child td { border-bottom: none; }
+.trend-compare-table .tc-good { color: var(--success); font-weight: 600; }
+.trend-compare-table .tc-warn { color: var(--warning); font-weight: 600; }
+.trend-compare-table .tc-bad { color: var(--error); font-weight: 600; }
+.trend-compare-table .tc-best { background: #f6ffed; }
+.trend-compare-table .tc-worst { background: #fff2f0; }
 
 /* ===== BATCH SELECTOR ===== */
 .batch-selector-wrap { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
@@ -188,6 +194,16 @@ canvas { display: block; }
 }
 .batch-sel-btn:hover { border-color: var(--primary); color: var(--primary); }
 .batch-sel-btn.selected { background: #e8f4ff; border-color: #bae0ff; color: var(--primary); }
+.trend-metric-toggle { display: flex; gap: 4px; flex-wrap: wrap; }
+.metric-toggle-btn {
+  padding: 2px 8px; font-size: 11px; border-radius: 4px;
+  border: 1px solid var(--border); background: #fff;
+  cursor: pointer; color: var(--text-secondary);
+  transition: all 0.15s; white-space: nowrap; display: flex; align-items: center; gap: 4px;
+}
+.metric-toggle-btn:hover { border-color: var(--primary); color: var(--primary); }
+.metric-toggle-btn.active { border-color: currentColor; }
+.metric-toggle-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 
 /* ===== TABLE SECTION ===== */
 #table-section { margin-bottom: 0; }
@@ -494,14 +510,16 @@ const NEW_FORMAT_PASSTHROUGH_RENAME = {
 let batches = [];         // [{id, name, time, rows, scoreCols, isNewFormat, hasSubdim}]
 let activeBatchId = null;
 let chartFilter = null;   // {type, value} - filter for table rows
-let distFilter = null;    // {level:1|2|3, col, label} - filter for dist chart only
+let distFilters = [];     // [{level:1|2|3, col, label}] - multi-select filters for dist chart
+let distFilterExpandedCol = null;  // which L1 col is expanded in the filter bar
+let distFilterExpandedL2 = null;   // 'col::l2label' expanded for L3
 let sortConfig = { col: null, dir: 'asc' };
 let searchQuery = '';
 let currentPage = 1;
 let pageSize = 20;
 let expandedRows = new Set();
-let trendMetric = 'avg'; // 'avg' | 'lowrate' | 'highrate' | dim-name
 let trendSelectedBatches = null; // null = all
+let trendHiddenMetrics = new Set(); // metrics hidden from the bar chart
 
 // Chart instances
 let charts = {};
@@ -836,7 +854,7 @@ function handleFiles(files) {
           batches.unshift(batch);
           activeBatchId = batch.id;
           chartFilter = null;
-          distFilter = null;
+          distFilters = [];
           sortConfig = { col: null, dir: 'asc' };
           searchQuery = '';
           currentPage = 1;
@@ -889,7 +907,7 @@ function openDimConfig(batchId) {
       batch.scoreCols = selectedCols;
       saveState();
       chartFilter = null;
-      distFilter = null;
+      distFilters = [];
       renderAll();
       showToast(`已更新为 ${selectedCols.length} 个评分维度`, 'success');
     }
@@ -933,7 +951,9 @@ function selectBatch(id) {
   if (activeBatchId === id) return;
   activeBatchId = id;
   chartFilter = null;
-  distFilter = null;
+  distFilters = [];
+  distFilterExpandedCol = null;
+  distFilterExpandedL2 = null;
   sortConfig = { col: null, dir: 'asc' };
   searchQuery = '';
   currentPage = 1;
@@ -948,7 +968,7 @@ function deleteBatch(id, e) {
     activeBatchId = batches.length ? batches[0].id : null;
   }
   chartFilter = null;
-  distFilter = null;
+  distFilters = [];
   currentPage = 1;
   saveState();
   renderAll();
@@ -1103,20 +1123,17 @@ function buildContentHTML(batch) {
     <div class="card-header">
       <h3>历史趋势对比</h3>
       <div class="card-header-actions">
-        <div id="trend-metric-btns" class="trend-metric-btns">
-          <button class="metric-btn ${trendMetric==='avg'?'active':''}" data-metric="avg" onclick="setTrendMetric('avg')">综合分</button>
-          <button class="metric-btn ${trendMetric==='lowrate'?'active':''}" data-metric="lowrate" onclick="setTrendMetric('lowrate')">低分率</button>
-          <button class="metric-btn ${trendMetric==='highrate'?'active':''}" data-metric="highrate" onclick="setTrendMetric('highrate')">高质率</button>
-          ${getDynamicMetricBtns()}
+        <div id="trend-batch-selector" class="batch-selector-wrap">
+          <span class="batch-sel-label">批次：</span>
         </div>
       </div>
     </div>
-    <div class="card-header" style="padding-top:8px;padding-bottom:8px;border-top:none">
-      <div id="trend-batch-selector" class="batch-selector-wrap">
-        <span class="batch-sel-label">批次：</span>
-      </div>
-    </div>
     <div class="card-body">
+      <div id="trend-compare-table-wrap" style="overflow-x:auto;margin-bottom:16px"></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+        <span style="font-size:12px;color:var(--text-secondary)">显示指标：</span>
+        <div id="trend-metric-toggles" class="trend-metric-toggle"></div>
+      </div>
       <div class="trend-chart-wrap"><canvas id="chart-trend"></canvas></div>
     </div>
   </div>
@@ -1126,18 +1143,223 @@ function buildContentHTML(batch) {
   `;
 }
 
-function getDynamicMetricBtns() {
-  // Collect all unique scoreCols across batches
-  const allCols = new Set();
-  batches.forEach(b => (b.scoreCols || []).forEach(c => allCols.add(c)));
-  return Array.from(allCols).map(c =>
-    `<button class="metric-btn ${trendMetric===c?'active':''}" data-metric="${escHtml(c)}" onclick="setTrendMetric('${c.replace(/'/g,"\\'")}')">
-      ${escHtml(c)}
-    </button>`
-  ).join('');
+// ===== TREND CHART =====
+// Colors for metrics
+const TREND_COLORS = [
+  '#1677ff','#52c41a','#faad14','#ff4d4f','#722ed1','#13c2c2','#eb2f96','#fa8c16',
+  '#2f54eb','#389e0d','#d4b106','#cf1322','#531dab','#08979c','#c41d7f','#d46b08'
+];
+
+// Collect all metrics across batches for trend display
+function getTrendMetrics(activeBatches) {
+  const dimSet = new Set();
+  activeBatches.forEach(b => (b.scoreCols || []).forEach(c => dimSet.add(c)));
+  const dims = Array.from(dimSet);
+  return [
+    { key: 'avg', label: '综合分', suffix: '' },
+    { key: 'lowrate', label: '低分率', suffix: '%' },
+    { key: 'highrate', label: '高质率', suffix: '%' },
+    ...dims.map(c => ({ key: c, label: c, suffix: '' }))
+  ];
 }
 
-// ===== CHARTS =====
+function calcBatchMetricValue(b, metricKey) {
+  const rows = b.rows;
+  const scoreCols = b.scoreCols;
+  const scores = rows.map(r => calcOverallScore(r, scoreCols, b.isNewFormat)).filter(v => !isNaN(v));
+  if (metricKey === 'avg') {
+    return scores.length ? parseFloat((scores.reduce((a,v)=>a+v,0)/scores.length).toFixed(3)) : null;
+  } else if (metricKey === 'lowrate') {
+    return scores.length ? parseFloat((scores.filter(v=>v<3).length/scores.length*100).toFixed(1)) : null;
+  } else if (metricKey === 'highrate') {
+    return scores.length ? parseFloat((scores.filter(v=>v>=4).length/scores.length*100).toFixed(1)) : null;
+  } else {
+    const dimVals = rows.map(r => parseFloat(r[metricKey])).filter(v => !isNaN(v));
+    return dimVals.length ? parseFloat((dimVals.reduce((a,v)=>a+v,0)/dimVals.length).toFixed(3)) : null;
+  }
+}
+
+function getActiveTrendBatches() {
+  const sorted = [...batches].sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  return sorted.filter(b => !trendSelectedBatches || trendSelectedBatches.includes(b.id));
+}
+
+function renderTrendCompareTable(activeBatches) {
+  const wrap = document.getElementById('trend-compare-table-wrap');
+  if (!wrap) return;
+  if (activeBatches.length < 1) { wrap.innerHTML = ''; return; }
+
+  const metrics = getTrendMetrics(activeBatches);
+  // Compute all values
+  const tableData = activeBatches.map(b => ({
+    name: b.name,
+    values: metrics.map(m => calcBatchMetricValue(b, m.key))
+  }));
+
+  // Find best/worst per metric column (for highlight)
+  const metricBest = metrics.map((m, mi) => {
+    const vals = tableData.map(r => r.values[mi]).filter(v => v !== null);
+    if (!vals.length) return null;
+    // For lowrate: best = min; for others: best = max
+    return m.key === 'lowrate' ? Math.min(...vals) : Math.max(...vals);
+  });
+  const metricWorst = metrics.map((m, mi) => {
+    const vals = tableData.map(r => r.values[mi]).filter(v => v !== null);
+    if (!vals.length) return null;
+    return m.key === 'lowrate' ? Math.max(...vals) : Math.min(...vals);
+  });
+
+  let html = `<table class="trend-compare-table">
+    <thead><tr>
+      <th>批次</th>
+      ${metrics.map(m => `<th>${escHtml(m.label)}${m.suffix ? '<br><small style="font-weight:400;color:var(--text-tertiary)">' + m.suffix + '</small>' : ''}</th>`).join('')}
+    </tr></thead>
+    <tbody>`;
+
+  tableData.forEach(row => {
+    html += `<tr><td title="${escHtml(row.name)}">${escHtml(row.name.length > 18 ? row.name.slice(0,18) + '…' : row.name)}</td>`;
+    row.values.forEach((v, mi) => {
+      const m = metrics[mi];
+      const isBest = v !== null && v === metricBest[mi] && activeBatches.length > 1;
+      const isWorst = v !== null && v === metricWorst[mi] && activeBatches.length > 1 && metricBest[mi] !== metricWorst[mi];
+      let cls = '';
+      if (isBest) cls = 'tc-best';
+      else if (isWorst) cls = 'tc-worst';
+      let valCls = '';
+      if (m.key === 'avg') {
+        valCls = v >= 4 ? 'tc-good' : v >= 3 ? 'tc-warn' : v !== null ? 'tc-bad' : '';
+      } else if (m.key === 'lowrate') {
+        valCls = v > 30 ? 'tc-bad' : v > 10 ? 'tc-warn' : v !== null ? 'tc-good' : '';
+      } else if (m.key === 'highrate') {
+        valCls = v >= 20 ? 'tc-good' : v >= 5 ? 'tc-warn' : v !== null ? 'tc-bad' : '';
+      }
+      const display = v !== null ? `${v}${m.suffix}` : '—';
+      html += `<td class="${cls}"><span class="${valCls}">${display}</span></td>`;
+    });
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function renderTrendMetricToggles(metrics) {
+  const wrap = document.getElementById('trend-metric-toggles');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  metrics.forEach((m, i) => {
+    const color = TREND_COLORS[i % TREND_COLORS.length];
+    const isActive = !trendHiddenMetrics.has(m.key);
+    const btn = document.createElement('button');
+    btn.className = 'metric-toggle-btn' + (isActive ? ' active' : '');
+    btn.style.color = isActive ? color : 'var(--text-secondary)';
+    btn.style.borderColor = isActive ? color : 'var(--border)';
+    btn.innerHTML = `<span class="metric-toggle-dot" style="background:${isActive ? color : 'var(--border)'}"></span>${escHtml(m.label)}`;
+    btn.onclick = () => {
+      if (trendHiddenMetrics.has(m.key)) trendHiddenMetrics.delete(m.key);
+      else trendHiddenMetrics.add(m.key);
+      renderTrendChart();
+    };
+    wrap.appendChild(btn);
+  });
+}
+
+function renderTrendChart() {
+  const canvas = document.getElementById('chart-trend');
+  if (!canvas) return;
+  if (charts['trend']) { try { charts['trend'].destroy(); } catch(e) {} delete charts['trend']; }
+
+  const activeBatches = getActiveTrendBatches();
+  renderTrendCompareTable(activeBatches);
+
+  if (activeBatches.length < 1) {
+    canvas.parentElement.style.display = 'none';
+    return;
+  }
+  canvas.parentElement.style.display = '';
+
+  const metrics = getTrendMetrics(activeBatches);
+  renderTrendMetricToggles(metrics);
+
+  const visibleMetrics = metrics.filter(m => !trendHiddenMetrics.has(m.key));
+  if (!visibleMetrics.length) return;
+
+  const labels = activeBatches.map(b => b.name.length > 15 ? b.name.slice(0,15) + '…' : b.name);
+
+  const datasets = visibleMetrics.map((m, i) => {
+    const colorIdx = metrics.findIndex(x => x.key === m.key);
+    const color = TREND_COLORS[colorIdx % TREND_COLORS.length];
+    const values = activeBatches.map(b => calcBatchMetricValue(b, m.key));
+    return {
+      label: m.label + (m.suffix ? ` (${m.suffix})` : ''),
+      data: values,
+      backgroundColor: color + 'cc',
+      borderColor: color,
+      borderWidth: 1.5,
+      borderRadius: 4,
+      spanGaps: true
+    };
+  });
+
+  charts['trend'] = new Chart(canvas, {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          labels: { font: { size: 11 }, padding: 12, usePointStyle: true, pointStyleWidth: 10 }
+        },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const m = visibleMetrics[ctx.datasetIndex];
+              const v = ctx.parsed.y;
+              return ` ${m.label}: ${v !== null ? v + m.suffix : 'N/A'}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxRotation: 30, font: { size: 11 } } },
+        y: { beginAtZero: false, grid: { color: '#f0f0f0' }, ticks: { font: { size: 11 } } }
+      }
+    }
+  });
+}
+
+function renderTrendBatchSelector() {
+  const wrap = document.getElementById('trend-batch-selector');
+  if (!wrap) return;
+  wrap.innerHTML = '<span class="batch-sel-label">批次：</span>';
+  const allBtn = document.createElement('button');
+  allBtn.className = 'batch-sel-btn' + (!trendSelectedBatches ? ' selected' : '');
+  allBtn.textContent = '全部';
+  allBtn.onclick = () => { trendSelectedBatches = null; renderTrendChart(); renderTrendBatchSelector(); };
+  wrap.appendChild(allBtn);
+  batches.forEach(b => {
+    const btn = document.createElement('button');
+    btn.className = 'batch-sel-btn' + (trendSelectedBatches && trendSelectedBatches.includes(b.id) ? ' selected' : '');
+    btn.textContent = b.name.length > 12 ? b.name.slice(0, 12) + '…' : b.name;
+    btn.title = b.name;
+    btn.onclick = () => {
+      if (!trendSelectedBatches) trendSelectedBatches = batches.map(x => x.id);
+      const idx = trendSelectedBatches.indexOf(b.id);
+      if (idx >= 0) {
+        trendSelectedBatches.splice(idx, 1);
+        if (!trendSelectedBatches.length) trendSelectedBatches = null;
+      } else {
+        trendSelectedBatches.push(b.id);
+      }
+      renderTrendChart();
+      renderTrendBatchSelector();
+    };
+    wrap.appendChild(btn);
+  });
+}
 function destroyCharts() {
   Object.keys(charts).forEach(k => {
     try { charts[k].destroy(); } catch(e) {}
@@ -1146,25 +1368,64 @@ function destroyCharts() {
 }
 
 // ===== DIST FILTER HELPERS =====
-// Get the rows that pass the current distFilter
-function getDistFilteredRows(batch) {
-  if (!distFilter) return batch.rows;
-  const { level, col, label } = distFilter;
-  if (level === 1) {
-    // L1: filter to rows where this score col has any value
-    return batch.rows.filter(r => r[col] !== undefined && r[col] !== '' && r[col] !== null);
-  } else if (level === 2) {
-    return batch.rows.filter(r => r[col + '_level2'] === label);
-  } else if (level === 3) {
-    return batch.rows.filter(r => {
-      const l3 = r[col + '_level3'] || '';
-      return l3.split('；').some(t => t.trim() === label);
-    });
+// Check if a filter item matches a row
+function rowMatchesDistItem(r, item) {
+  const { level, col, label } = item;
+  if (level === 1) return r[col] !== undefined && r[col] !== '' && r[col] !== null;
+  if (level === 2) return r[col + '_level2'] === label;
+  if (level === 3) {
+    const l3 = r[col + '_level3'] || '';
+    return l3.split('；').some(t => t.trim() === label);
   }
-  return batch.rows;
+  return true;
 }
 
-// Build dist filter bar UI and update dist chart
+// Get the rows that pass the current distFilters (OR across filters in same col/level, AND across different cols)
+function getDistFilteredRows(batch) {
+  if (!distFilters.length) return batch.rows;
+  // Group filters by col
+  const byCol = new Map();
+  distFilters.forEach(f => {
+    if (!byCol.has(f.col)) byCol.set(f.col, []);
+    byCol.get(f.col).push(f);
+  });
+  // Each col group is OR; between groups is AND
+  return batch.rows.filter(r =>
+    Array.from(byCol.values()).every(group =>
+      group.some(item => rowMatchesDistItem(r, item))
+    )
+  );
+}
+
+// Toggle a distFilter item (add if absent, remove if present)
+function toggleDistFilter(item) {
+  const idx = distFilters.findIndex(f => f.col === item.col && f.label === item.label && f.level === item.level);
+  if (idx >= 0) {
+    distFilters.splice(idx, 1);
+  } else {
+    distFilters.push(item);
+  }
+}
+
+function isDistFilterActive(item) {
+  return distFilters.some(f => f.col === item.col && f.label === item.label && f.level === item.level);
+}
+
+// Build chartFilter from current distFilters for table sync
+// If multiple filters: use 'multi' type (table shows union of all)
+function syncChartFilterFromDist(batch) {
+  if (!distFilters.length) {
+    chartFilter = null;
+  } else if (distFilters.length === 1) {
+    const f = distFilters[0];
+    chartFilter = { type: f.level === 1 ? 'l1' : f.level === 2 ? 'l2' : 'l3', col: f.col, label: f.label || f.col, value: f.label || f.col };
+  } else {
+    chartFilter = { type: 'multi', distFilters: [...distFilters], label: `${distFilters.length}个筛选`, value: 'multi' };
+  }
+  currentPage = 1;
+}
+
+// Build dist filter bar UI
 function renderDistFilterBar(batch) {
   const bar = document.getElementById('dist-filter-bar');
   if (!bar) return;
@@ -1172,80 +1433,90 @@ function renderDistFilterBar(batch) {
 
   // "全部" pill
   const allBtn = document.createElement('button');
-  allBtn.className = 'metric-btn' + (!distFilter ? ' active' : '');
+  allBtn.className = 'metric-btn' + (!distFilters.length ? ' active' : '');
   allBtn.textContent = '全部数据';
-  allBtn.style.cssText = 'font-size:11px;padding:2px 8px';
-  allBtn.onclick = () => { distFilter = null; renderDistFilterBar(batch); renderDistChart(batch); };
+  allBtn.style.cssText = 'font-size:11px;padding:2px 8px;flex-shrink:0';
+  allBtn.onclick = () => {
+    distFilters = [];
+    chartFilter = null;
+    currentPage = 1;
+    renderDistFilterBar(batch);
+    renderDistChart(batch);
+    renderTableSection(batch);
+    updateFilterBadge(batch);
+  };
   bar.appendChild(allBtn);
 
   if (!batch.hasSubdim) return;
 
-  // L1 dim pills
+  // expandedDimCol: which L1 is expanded to show L2/L3
+  // We track this via a module-level variable
   batch.scoreCols.forEach(col => {
-    const isL1Active = distFilter && distFilter.level === 1 && distFilter.col === col && !distFilter.label;
+    const isExpanded = distFilterExpandedCol === col;
+    const hasAnyActive = distFilters.some(f => f.col === col);
+
     const l1btn = document.createElement('button');
-    l1btn.className = 'metric-btn' + (isL1Active ? ' active' : '');
+    l1btn.className = 'metric-btn' + (hasAnyActive ? ' active' : '');
     l1btn.textContent = col;
-    l1btn.title = `按维度「${col}」筛选`;
-    l1btn.style.cssText = 'font-size:11px;padding:2px 8px';
+    l1btn.title = isExpanded ? '收起' : `展开「${col}」的标签`;
+    l1btn.style.cssText = 'font-size:11px;padding:2px 8px;flex-shrink:0';
     l1btn.onclick = () => {
-      distFilter = { level: 1, col, label: null };
-      chartFilter = { type: 'l1', col, label: col, value: col };
-      currentPage = 1;
+      distFilterExpandedCol = isExpanded ? null : col;
       renderDistFilterBar(batch);
-      renderDistChart(batch);
-      renderTableSection(batch);
     };
     bar.appendChild(l1btn);
 
-    // If this dim is L1-active, also show its L2 children
-    if (distFilter && distFilter.col === col) {
-      // Collect L2 labels
+    if (isExpanded) {
+      // L2 pills
       const l2Set = new Map();
       batch.rows.forEach(r => {
         const l2 = r[col + '_level2'];
         if (l2) l2Set.set(l2, (l2Set.get(l2) || 0) + 1);
       });
+
       l2Set.forEach((cnt, l2label) => {
-        const isL2Active = distFilter.level === 2 && distFilter.label === l2label;
+        const item2 = { level: 2, col, label: l2label };
+        const isActive = isDistFilterActive(item2);
+
         const l2btn = document.createElement('button');
-        l2btn.className = 'metric-btn' + (isL2Active ? ' active' : '');
-        l2btn.textContent = `${l2label}`;
-        l2btn.title = `${col} → ${l2label} (${cnt}条)`;
-        l2btn.style.cssText = 'font-size:10px;padding:2px 6px;background:#f5f7fa';
+        l2btn.className = 'metric-btn' + (isActive ? ' active' : '');
+        l2btn.textContent = l2label;
+        l2btn.title = `${cnt}条 — 点击${isActive?'取消':'添加'}筛选`;
+        l2btn.style.cssText = `font-size:10px;padding:2px 6px;${isActive ? '' : 'background:#f5f7fa;'}`;
         l2btn.onclick = (e) => {
           e.stopPropagation();
-          distFilter = { level: 2, col, label: l2label };
-          chartFilter = { type: 'l2', col, label: l2label, value: l2label };
-          currentPage = 1;
+          toggleDistFilter(item2);
+          syncChartFilterFromDist(batch);
           renderDistFilterBar(batch);
           renderDistChart(batch);
           renderTableSection(batch);
+          updateFilterBadge(batch);
         };
         bar.appendChild(l2btn);
 
-        // If this L2 is active, show its L3 children
-        if (isL2Active) {
+        // L3 pills — always show under active L2 items or if L2 is expanded
+        if (isActive || distFilterExpandedL2 === `${col}::${l2label}`) {
           const l3Set = new Map();
           batch.rows.filter(r => r[col + '_level2'] === l2label).forEach(r => {
             const l3 = r[col + '_level3'] || '';
             l3.split('；').forEach(t => { t = t.trim(); if (t) l3Set.set(t, (l3Set.get(t) || 0) + 1); });
           });
           l3Set.forEach((cnt3, l3label) => {
-            const isL3Active = distFilter.level === 3 && distFilter.label === l3label;
+            const item3 = { level: 3, col, label: l3label };
+            const isL3Active = isDistFilterActive(item3);
             const l3btn = document.createElement('button');
             l3btn.className = 'metric-btn' + (isL3Active ? ' active' : '');
-            l3btn.textContent = l3label.length > 16 ? l3label.slice(0, 16) + '…' : l3label;
-            l3btn.title = `${l3label} (${cnt3}条)`;
-            l3btn.style.cssText = 'font-size:10px;padding:2px 6px;background:#e8f4ff';
+            l3btn.textContent = l3label.length > 18 ? l3label.slice(0, 18) + '…' : l3label;
+            l3btn.title = `${l3label} (${cnt3}条) — 点击${isL3Active?'取消':'添加'}筛选`;
+            l3btn.style.cssText = `font-size:10px;padding:2px 6px;${isL3Active ? '' : 'background:#e8f4ff;'}`;
             l3btn.onclick = (e) => {
               e.stopPropagation();
-              distFilter = { level: 3, col, label: l3label };
-              chartFilter = { type: 'l3', col, label: l3label, value: l3label };
-              currentPage = 1;
+              toggleDistFilter(item3);
+              syncChartFilterFromDist(batch);
               renderDistFilterBar(batch);
               renderDistChart(batch);
               renderTableSection(batch);
+              updateFilterBadge(batch);
             };
             bar.appendChild(l3btn);
           });
@@ -1254,22 +1525,29 @@ function renderDistFilterBar(batch) {
     }
   });
 
-  // Show active filter badge
-  if (distFilter && distFilter.label) {
-    const badge = document.createElement('span');
-    badge.className = 'filter-badge';
-    badge.innerHTML = `筛选: ${escHtml(distFilter.label)} &#215;`;
-    badge.style.marginLeft = '4px';
-    badge.onclick = () => {
-      distFilter = null;
-      chartFilter = null;
-      currentPage = 1;
-      renderDistFilterBar(batch);
-      renderDistChart(batch);
-      renderTableSection(batch);
-      updateFilterBadge(batch);
-    };
-    bar.appendChild(badge);
+  // Active filter summary badges
+  if (distFilters.length) {
+    const sep = document.createElement('span');
+    sep.style.cssText = 'font-size:11px;color:var(--text-tertiary);padding:0 4px;flex-shrink:0';
+    sep.textContent = '|';
+    bar.appendChild(sep);
+
+    distFilters.forEach((f, i) => {
+      const badge = document.createElement('span');
+      badge.className = 'filter-badge';
+      badge.innerHTML = `${escHtml(f.label || f.col)} &#215;`;
+      badge.title = '点击移除此筛选';
+      badge.style.cssText = 'cursor:pointer';
+      badge.onclick = () => {
+        distFilters.splice(i, 1);
+        syncChartFilterFromDist(batch);
+        renderDistFilterBar(batch);
+        renderDistChart(batch);
+        renderTableSection(batch);
+        updateFilterBadge(batch);
+      };
+      bar.appendChild(badge);
+    });
   }
 }
 
@@ -1453,11 +1731,12 @@ function renderSubdimDist(batch) {
 }
 
 function filterByL2(col, label) {
-  distFilter = { level: 2, col, label };
-  chartFilter = { type: 'l2', col, label, value: label };
-  currentPage = 1;
+  const item = { level: 2, col, label };
+  toggleDistFilter(item);
+  syncChartFilterFromDist(batches.find(b => b.id === activeBatchId));
   const batch = batches.find(b => b.id === activeBatchId);
   if (batch) {
+    distFilterExpandedCol = col;
     renderDistFilterBar(batch);
     renderDistChart(batch);
     renderTableSection(batch);
@@ -1466,11 +1745,12 @@ function filterByL2(col, label) {
 }
 
 function filterByL3(col, tag) {
-  distFilter = { level: 3, col, label: tag };
-  chartFilter = { type: 'l3', col, label: tag, value: tag };
-  currentPage = 1;
+  const item = { level: 3, col, label: tag };
+  toggleDistFilter(item);
+  syncChartFilterFromDist(batches.find(b => b.id === activeBatchId));
   const batch = batches.find(b => b.id === activeBatchId);
   if (batch) {
+    distFilterExpandedCol = col;
     renderDistFilterBar(batch);
     renderDistChart(batch);
     renderTableSection(batch);
@@ -1478,136 +1758,7 @@ function filterByL3(col, tag) {
   }
 }
 
-// ===== TREND CHART =====
-function getTrendData() {
-  const selected = trendSelectedBatches;
-  const batchesForTrend = batches.filter(b => !selected || selected.includes(b.id));
-  const sorted = [...batchesForTrend].sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-
-  return sorted.map(b => {
-    const rows = b.rows;
-    const scoreCols = b.scoreCols;
-    const scores = rows.map(r => calcOverallScore(r, scoreCols, b.isNewFormat)).filter(v => !isNaN(v));
-
-    let value;
-    if (trendMetric === 'avg') {
-      value = scores.length ? parseFloat((scores.reduce((a,v)=>a+v,0)/scores.length).toFixed(3)) : null;
-    } else if (trendMetric === 'lowrate') {
-      value = scores.length ? parseFloat((scores.filter(v=>v<3).length/scores.length*100).toFixed(1)) : null;
-    } else if (trendMetric === 'highrate') {
-      value = scores.length ? parseFloat((scores.filter(v=>v>=4).length/scores.length*100).toFixed(1)) : null;
-    } else {
-      // Dimension metric
-      const dimVals = rows.map(r => parseFloat(r[trendMetric])).filter(v => !isNaN(v));
-      value = dimVals.length ? parseFloat((dimVals.reduce((a,v)=>a+v,0)/dimVals.length).toFixed(3)) : null;
-    }
-
-    return { label: b.name, time: b.time || b.name, value };
-  });
-}
-
-function renderTrendChart() {
-  const canvas = document.getElementById('chart-trend');
-  if (!canvas) return;
-  if (charts['trend']) { try { charts['trend'].destroy(); } catch(e) {} delete charts['trend']; }
-
-  const data = getTrendData();
-  if (data.length < 1) {
-    canvas.parentElement.innerHTML = '<div class="no-data">需要至少1个批次才能显示趋势</div>';
-    return;
-  }
-
-  const labels = data.map(d => d.label.length > 15 ? d.label.slice(0, 15) + '…' : d.label);
-  const values = data.map(d => d.value);
-
-  const metricLabel = trendMetric === 'avg' ? '综合分'
-    : trendMetric === 'lowrate' ? '低分率(%)'
-    : trendMetric === 'highrate' ? '高质率(%)'
-    : trendMetric;
-
-  charts['trend'] = new Chart(canvas, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        label: metricLabel,
-        data: values,
-        borderColor: '#1677ff',
-        backgroundColor: 'rgba(22,119,255,0.08)',
-        pointBackgroundColor: '#1677ff',
-        pointRadius: 5,
-        pointHoverRadius: 7,
-        fill: true,
-        tension: 0.3,
-        borderWidth: 2,
-        spanGaps: true
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            title: (items) => data[items[0].dataIndex]?.label || '',
-            label: ctx => {
-              const v = ctx.parsed.y;
-              const suffix = (trendMetric === 'lowrate' || trendMetric === 'highrate') ? '%' : '';
-              return ` ${metricLabel}: ${v !== null ? v + suffix : 'N/A'}`;
-            }
-          }
-        }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { maxRotation: 30, font: { size: 11 } } },
-        y: { beginAtZero: false, grid: { color: '#f0f0f0' } }
-      }
-    }
-  });
-}
-
-function renderTrendBatchSelector() {
-  const wrap = document.getElementById('trend-batch-selector');
-  if (!wrap) return;
-  wrap.innerHTML = '<span class="batch-sel-label">批次：</span>';
-  const allBtn = document.createElement('button');
-  allBtn.className = 'batch-sel-btn' + (!trendSelectedBatches ? ' selected' : '');
-  allBtn.textContent = '全部';
-  allBtn.onclick = () => { trendSelectedBatches = null; renderTrendChart(); renderTrendBatchSelector(); };
-  wrap.appendChild(allBtn);
-  batches.forEach(b => {
-    const btn = document.createElement('button');
-    btn.className = 'batch-sel-btn' + (trendSelectedBatches && trendSelectedBatches.includes(b.id) ? ' selected' : '');
-    btn.textContent = b.name.length > 12 ? b.name.slice(0, 12) + '…' : b.name;
-    btn.title = b.name;
-    btn.onclick = () => {
-      if (!trendSelectedBatches) trendSelectedBatches = batches.map(x => x.id);
-      const idx = trendSelectedBatches.indexOf(b.id);
-      if (idx >= 0) {
-        trendSelectedBatches.splice(idx, 1);
-        if (!trendSelectedBatches.length) trendSelectedBatches = null;
-      } else {
-        trendSelectedBatches.push(b.id);
-      }
-      renderTrendChart();
-      renderTrendBatchSelector();
-    };
-    wrap.appendChild(btn);
-  });
-}
-
-function setTrendMetric(m) {
-  trendMetric = m;
-  // Update button states
-  const btns = document.querySelectorAll('#trend-metric-btns .metric-btn');
-  btns.forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.metric === m);
-  });
-  renderTrendChart();
-}
-
-// ===== TABLE =====
+// ===== CHARTS =====
 function buildTableHTML(batch) {
   return `
   <div class="card" id="table-section">
@@ -1629,19 +1780,23 @@ function getFilteredRows(batch) {
   let rows = batch.rows;
   if (chartFilter) {
     if (chartFilter.type === 'score') {
-      // Exact score value match
       const target = chartFilter.value;
       rows = rows.filter(r => {
         const s = calcOverallScore(r, batch.scoreCols, batch.isNewFormat);
         return !isNaN(s) && Math.abs(s - target) < 0.001;
       });
     } else if (chartFilter.type === 'dist') {
-      // Legacy range filter (kept for backward compat)
       const { min, max } = chartFilter;
       rows = rows.filter(r => {
         const s = calcOverallScore(r, batch.scoreCols, batch.isNewFormat);
         return !isNaN(s) && s >= min && (s < max || (max === 5 && s <= 5));
       });
+    } else if (chartFilter.type === 'multi') {
+      // Same logic as getDistFilteredRows but from chartFilter's snapshot
+      const filters = chartFilter.distFilters || [];
+      const byCol = new Map();
+      filters.forEach(f => { if (!byCol.has(f.col)) byCol.set(f.col, []); byCol.get(f.col).push(f); });
+      rows = rows.filter(r => Array.from(byCol.values()).every(g => g.some(item => rowMatchesDistItem(r, item))));
     } else if (chartFilter.type === 'l1') {
       const { col } = chartFilter;
       rows = rows.filter(r => r[col] !== undefined && r[col] !== '' && r[col] !== null);
@@ -1919,7 +2074,9 @@ function changePageSize(val) {
 
 function clearFilter() {
   chartFilter = null;
-  distFilter = null;
+  distFilters = [];
+  distFilterExpandedCol = null;
+  distFilterExpandedL2 = null;
   currentPage = 1;
   const batch = batches.find(b => b.id === activeBatchId);
   if (batch) {
