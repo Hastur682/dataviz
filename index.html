@@ -554,10 +554,27 @@ function loadState() {
 }
 
 // ===== CSV FORMAT DETECTION =====
+// Strip BOM from all keys in a row
+function stripBomKeys(rows) {
+  if (!rows || !rows.length) return rows;
+  const bom = '\ufeff';
+  return rows.map(r => {
+    const out = {};
+    Object.keys(r).forEach(k => {
+      out[k.startsWith(bom) ? k.slice(1) : k] = r[k];
+    });
+    return out;
+  });
+}
+
 function isNewFormat(rows) {
   if (!rows || !rows.length) return false;
   const keys = Object.keys(rows[0]);
-  return NEW_FORMAT_KEYS.some(k => keys.includes(k));
+  // Check with and without BOM
+  const bom = '\ufeff';
+  return NEW_FORMAT_KEYS.some(k =>
+    keys.includes(k) || keys.includes(bom + k)
+  );
 }
 
 function detectScoreCols(rows) {
@@ -565,19 +582,32 @@ function detectScoreCols(rows) {
   if (isNewFormat(rows)) {
     return { cols: NEW_FORMAT_VALS.slice(), isNew: true };
   }
-  // Old format: find columns with numeric 1-5 values
+  // Old format: find columns whose values look like scores (1-5 range)
+  // Support both plain numbers and "3分-xxx" style strings
+  const sampleSize = Math.min(100, rows.length);
+  const sample = rows.slice(0, sampleSize);
   const keys = Object.keys(rows[0]).filter(k =>
     !k.startsWith('_') &&
     !k.endsWith('_level2') &&
     !k.endsWith('_level3') &&
-    k !== '' &&
+    k.trim() !== '' &&
     !/^(input\.|output\.)/.test(k)
   );
   const scoreCols = keys.filter(k => {
-    const vals = rows.slice(0, Math.min(50, rows.length))
-      .map(r => parseFloat(r[k]))
+    const vals = sample
+      .map(r => {
+        const raw = r[k];
+        if (raw == null || raw === '') return NaN;
+        // Try direct parse
+        const direct = parseFloat(raw);
+        if (!isNaN(direct)) return direct;
+        // Try extracting leading number from strings like "3分-xxx" or "3.5分"
+        const m = String(raw).trim().match(/^(\d+(?:\.\d+)?)\s*分/);
+        return m ? parseFloat(m[1]) : NaN;
+      })
       .filter(v => !isNaN(v));
-    if (vals.length < 3) return false;
+    if (vals.length < Math.max(3, sampleSize * 0.3)) return false;
+    // All parsed values must be in [0.5, 5.5]
     return vals.every(v => v >= 0.5 && v <= 5.5);
   });
   return { cols: scoreCols, isNew: false };
@@ -597,9 +627,13 @@ function extractScore(val) {
     return m ? m[1] : s;
 }
 
-// ===== NORMALIZE ROWS (new format) =====
+// ===== NORMALIZE ROWS =====
 function normalizeRows(rawRows, isNew) {
-  if (!isNew) return rawRows;
+  if (!isNew) {
+    // For old format: no structural changes needed, but return as-is
+    // (detectScoreCols already handles extractScore-style values in calcOverallScore)
+    return rawRows;
+  }
   return rawRows.map((raw) => {
     const row = {};
     // Copy meta cols
@@ -608,8 +642,9 @@ function normalizeRows(rawRows, isNew) {
     Object.entries(NEW_FORMAT_PASSTHROUGH_RENAME).forEach(([src, dst]) => { if (src in raw) row[dst] = raw[src]; });
     // Score cols with extractScore
     Object.entries(NEW_FORMAT_SCORE_MAP).forEach(([srcCol, dstCol]) => {
+        // BOM already stripped by stripBomKeys, but keep fallback
         const bom = '\ufeff';
-        const val = raw[srcCol] != null ? raw[srcCol] : raw[bom + srcCol];
+        const val = raw[srcCol] != null ? raw[srcCol] : (raw[bom + srcCol] != null ? raw[bom + srcCol] : null);
         row[dstCol] = extractScore(val != null ? val : '');
     });
     // Subdim extraction
@@ -640,9 +675,18 @@ function normalizeRows(rawRows, isNew) {
 }
 
 // ===== SCORE CALCULATION =====
+function parseScoreVal(v) {
+  if (v == null || v === '') return NaN;
+  const n = parseFloat(v);
+  if (!isNaN(n)) return n;
+  // Handle "3分-xxx" style strings
+  const m = String(v).trim().match(/^(\d+(?:\.\d+)?)\s*分/);
+  return m ? parseFloat(m[1]) : NaN;
+}
+
 function calcOverallScore(row, scoreCols, isNewFmt) {
   const vals = {};
-  scoreCols.forEach(c => { vals[c] = parseFloat(row[c]); });
+  scoreCols.forEach(c => { vals[c] = parseScoreVal(row[c]); });
   const all = scoreCols.map(c => vals[c]).filter(v => !isNaN(v));
   if (all.length === 0) return NaN;
   if (!isNewFmt) {
@@ -695,19 +739,25 @@ function handleFiles(files) {
       header: true,
       skipEmptyLines: true,
       complete(result) {
-        const rawRows = result.data;
+        const rawRows = stripBomKeys(result.data);
         if (!rawRows.length) { showToast('CSV 文件为空', 'error'); return; }
         const { cols: detectedCols, isNew } = detectScoreCols(rawRows);
+        const finalCols = isNew ? NEW_FORMAT_VALS.slice() : detectedCols;
         const normalizedRows = normalizeRows(rawRows, isNew);
         const hasSubdim = detectHasSubdim(normalizedRows);
         const time = extractTimeFromFilename(file.name);
         const batchName = file.name.replace(/\.csv$/i, '');
+        if (!finalCols.length) {
+          // Fallback: show all non-special columns as potential score cols in table
+          console.warn('[detectScoreCols] No score columns detected. Keys:', Object.keys(rawRows[0]));
+          showToast(`警告：未识别到评分列，将展示全部字段。请检查CSV格式。`, 'warn', 4000);
+        }
         const batch = {
           id: genId(),
           name: batchName,
           time: time,
           rows: normalizedRows,
-          scoreCols: isNew ? NEW_FORMAT_VALS.slice() : detectedCols,
+          scoreCols: finalCols,
           isNewFormat: isNew,
           hasSubdim: hasSubdim
         };
@@ -719,7 +769,7 @@ function handleFiles(files) {
         currentPage = 1;
         saveState();
         renderAll();
-        showToast(`已加载 ${normalizedRows.length} 条数据 (${isNew ? '新格式' : '老格式'})`, 'success');
+        showToast(`已加载 ${normalizedRows.length} 条数据 (${isNew ? '新格式' : '老格式'}${finalCols.length ? '，' + finalCols.length + '个维度' : ''})`, 'success');
       },
       error(err) {
         showToast(`解析失败: ${err.message}`, 'error');
@@ -1303,20 +1353,24 @@ function buildTableCols(batch) {
     }
     batch.scoreCols.forEach(c => cols.push({ key: c, label: c }));
   } else {
-    // Show overall first
-    cols.push({ key: '_overall', label: '整体分' });
+    // Show overall first (only if scoreCols exist)
+    if (batch.scoreCols.length) {
+      cols.push({ key: '_overall', label: '整体分' });
+    }
     // Show score cols
     batch.scoreCols.forEach(c => cols.push({ key: c, label: c }));
-    // Show other non-score non-special cols (limit to avoid clutter)
+    // Show other non-score non-special cols
     if (batch.rows.length) {
-      const specialKeys = new Set([...batch.scoreCols, '整体分', ...batch.scoreCols.map(c => c + '_level2'), ...batch.scoreCols.map(c => c + '_level3')]);
+      const specialKeys = new Set([...batch.scoreCols, '整体分', '_isNewFormat', ...batch.scoreCols.map(c => c + '_level2'), ...batch.scoreCols.map(c => c + '_level3')]);
       const others = Object.keys(batch.rows[0]).filter(k =>
         !specialKeys.has(k) &&
+        !k.startsWith('_') &&
         !k.endsWith('_level2') &&
-        !k.endsWith('_level3') &&
-        cols.length < 10
+        !k.endsWith('_level3')
       );
-      others.slice(0, 5).forEach(k => cols.push({ key: k, label: k }));
+      // If no scoreCols at all, show up to 15 columns; otherwise up to 5 extras
+      const limit = batch.scoreCols.length ? 5 : 15;
+      others.slice(0, limit).forEach(k => cols.push({ key: k, label: k }));
     }
   }
   return cols;
@@ -1339,9 +1393,9 @@ function buildTableRow(r, cols, batch) {
     }
     const v = r[c.key];
     if (v === undefined || v === null || v === '') return `<td>-</td>`;
-    const n = parseFloat(v);
-    if (batch.scoreCols.includes(c.key) && !isNaN(n)) {
-      return `<td><span class="score-cell ${getScoreClass(n)}">${n}</span></td>`;
+    if (batch.scoreCols.includes(c.key)) {
+      const n = parseScoreVal(v);
+      if (!isNaN(n)) return `<td><span class="score-cell ${getScoreClass(n)}">${n}</span></td>`;
     }
     return `<td>${escHtml(String(v).slice(0, 100))}</td>`;
   }).join('');
