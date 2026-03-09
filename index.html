@@ -205,6 +205,78 @@ canvas { display: block; }
 .metric-toggle-btn.active { border-color: currentColor; }
 .metric-toggle-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 
+/* ===== DIM DIST FILTER ===== */
+.dim-filter-panel {
+  padding: 10px 20px 0;
+  border-bottom: 1px solid var(--border);
+}
+.dim-filter-all-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.dim-filter-dims-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.dim-col-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.dim-col-group + .dim-col-group {
+  padding-left: 6px;
+  border-left: 1px solid var(--border);
+}
+.dim-l2-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 10px;
+  border-left: 2px solid #e6f0ff;
+  margin-left: 2px;
+}
+.dim-l3-block {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding-left: 10px;
+  border-left: 2px solid #bae0ff;
+  margin-left: 2px;
+}
+.dim-filter-status {
+  font-size: 11px;
+  color: var(--primary);
+  padding: 4px 0 8px;
+}
+/* metric-btn base + level variants */
+.metric-btn {
+  display: inline-flex; align-items: center; gap: 3px;
+  border-radius: 4px; border: 1px solid var(--border);
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+  background: #fff; color: var(--text-secondary); line-height: 1.4;
+}
+.metric-btn:hover { border-color: var(--primary); color: var(--primary); }
+.metric-btn.active { background: var(--primary); border-color: var(--primary); color: #fff !important; }
+/* L1 */
+.metric-btn-l1 { font-size: 12px; padding: 3px 10px; font-weight: 500; color: var(--text); }
+.metric-btn-l1.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.metric-btn-l1.expanded { border-color: var(--primary); color: var(--primary); background: #e8f4ff; }
+/* L2 */
+.metric-btn-l2 { font-size: 11px; padding: 2px 8px; background: #fafafa; }
+.metric-btn-l2.active { background: #1677ff; color: #fff; border-color: #1677ff; }
+/* L3 */
+.metric-btn-l3 { font-size: 10px; padding: 2px 6px; background: #f0f7ff; border-color: #c9e3ff; color: #4096ff; }
+.metric-btn-l3.active { background: #1677ff; color: #fff; border-color: #1677ff; }
+/* expand arrow */
+.dim-expand-arrow { font-size: 9px; transition: transform 0.15s; display: inline-block; }
+.dim-expand-arrow.open { transform: rotate(90deg); }
+
 /* ===== TABLE SECTION ===== */
 #table-section { margin-bottom: 0; }
 .table-toolbar {
@@ -1108,11 +1180,10 @@ function buildContentHTML(batch) {
       </div>
     </div>
     <div class="card">
-      <div class="card-header" style="flex-wrap:wrap;gap:6px;align-items:flex-start">
+      <div class="card-header" style="flex-wrap:nowrap;gap:8px">
         <h3 style="white-space:nowrap;flex-shrink:0">维度分数情况</h3>
-        <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;flex:1;min-width:0" id="dim-dist-filter-bar"></div>
-        <div id="dim-dist-filter-status" style="font-size:11px;color:var(--primary);white-space:nowrap;flex-shrink:0"></div>
       </div>
+      <div class="dim-filter-panel" id="dim-dist-filter-bar"></div>
       <div class="card-body">
         <div class="chart-wrap" style="height:260px"><canvas id="chart-dim-dist"></canvas></div>
       </div>
@@ -1674,16 +1745,17 @@ function renderDistChart(batch) {
 
 // ===== DIM DIST FILTER BAR =====
 function renderDimDistFilterBar(batch) {
-  const bar = document.getElementById('dim-dist-filter-bar');
-  const statusEl = document.getElementById('dim-dist-filter-status');
-  if (!bar) return;
-  bar.innerHTML = '';
+  const panel = document.getElementById('dim-dist-filter-bar');
+  if (!panel) return;
+  panel.innerHTML = '';
 
-  // "全部" pill
+  // Row 1: "全部维度" + L1 dimension buttons
+  const allRow = document.createElement('div');
+  allRow.className = 'dim-filter-all-row';
+
   const allBtn = document.createElement('button');
-  allBtn.className = 'metric-btn' + (!dimDistFilter ? ' active' : '');
+  allBtn.className = 'metric-btn metric-btn-l1' + (!dimDistFilter ? ' active' : '');
   allBtn.textContent = '全部维度';
-  allBtn.style.cssText = 'font-size:11px;padding:2px 8px;flex-shrink:0';
   allBtn.onclick = () => {
     dimDistFilter = null;
     dimDistExpandedCol = null;
@@ -1691,89 +1763,131 @@ function renderDimDistFilterBar(batch) {
     renderDimDistFilterBar(batch);
     renderDimDistChart(batch);
   };
-  bar.appendChild(allBtn);
+  allRow.appendChild(allBtn);
 
+  // L1 buttons in the same row
   batch.scoreCols.forEach(col => {
     const isExpanded = dimDistExpandedCol === col;
-    const isL1Active = dimDistFilter && dimDistFilter.col === col && dimDistFilter.level === 1;
+    const isActive = dimDistFilter && dimDistFilter.col === col && dimDistFilter.level === 1;
+    const hasHighlight = dimDistFilter && dimDistFilter.col === col;
 
     const l1btn = document.createElement('button');
-    l1btn.className = 'metric-btn' + ((dimDistFilter && dimDistFilter.col === col) ? ' active' : '');
-    l1btn.textContent = col;
-    l1btn.title = isExpanded ? '收起' : `展开「${col}」的标签筛选`;
-    l1btn.style.cssText = 'font-size:11px;padding:2px 8px;flex-shrink:0';
-    l1btn.onclick = () => {
-      if (!batch.hasSubdim) {
-        // Just set L1 filter
-        dimDistFilter = (isL1Active) ? null : { level: 1, col, label: col };
+    const arrowSpan = document.createElement('span');
+    arrowSpan.className = 'dim-expand-arrow' + (isExpanded ? ' open' : '');
+    arrowSpan.textContent = '›';
+
+    if (batch.hasSubdim) {
+      l1btn.className = 'metric-btn metric-btn-l1' + (hasHighlight ? ' active' : '') + (isExpanded ? ' expanded' : '');
+      l1btn.title = isExpanded ? '收起' : `展开「${col}」子维度`;
+      l1btn.appendChild(document.createTextNode(col));
+      l1btn.appendChild(arrowSpan);
+      l1btn.onclick = () => {
+        dimDistExpandedCol = isExpanded ? null : col;
+        if (!isExpanded) dimDistExpandedL2 = null;
+        renderDimDistFilterBar(batch);
+      };
+    } else {
+      l1btn.className = 'metric-btn metric-btn-l1' + (isActive ? ' active' : '');
+      l1btn.textContent = col;
+      l1btn.onclick = () => {
+        dimDistFilter = isActive ? null : { level: 1, col, label: col };
         renderDimDistFilterBar(batch);
         renderDimDistChart(batch);
-        return;
-      }
-      dimDistExpandedCol = isExpanded ? null : col;
-      if (!isExpanded) dimDistExpandedL2 = null;
-      renderDimDistFilterBar(batch);
-    };
-    bar.appendChild(l1btn);
+      };
+    }
+    allRow.appendChild(l1btn);
+  });
 
-    if (isExpanded && batch.hasSubdim) {
-      // L2 pills
-      const l2Set = new Map();
-      batch.rows.forEach(r => {
-        const l2 = r[col + '_level2'];
-        if (l2) l2Set.set(l2, (l2Set.get(l2) || 0) + 1);
-      });
+  panel.appendChild(allRow);
 
-      l2Set.forEach((cnt, l2label) => {
-        const isL2Active = dimDistFilter && dimDistFilter.col === col && dimDistFilter.level === 2 && dimDistFilter.label === l2label;
-        const l2btn = document.createElement('button');
-        l2btn.className = 'metric-btn' + (isL2Active ? ' active' : '');
-        l2btn.textContent = l2label;
-        l2btn.title = `${cnt}条`;
-        l2btn.style.cssText = `font-size:10px;padding:2px 6px;${isL2Active ? '' : 'background:#f5f7fa;'}`;
-        l2btn.onclick = (e) => {
-          e.stopPropagation();
-          dimDistFilter = isL2Active ? null : { level: 2, col, label: l2label };
-          dimDistExpandedL2 = dimDistFilter ? `${col}::${l2label}` : null;
-          renderDimDistFilterBar(batch);
-          renderDimDistChart(batch);
-        };
-        bar.appendChild(l2btn);
+  // Row 2: expanded L2/L3 sub-filter area (only if hasSubdim and a col is expanded)
+  if (batch.hasSubdim && dimDistExpandedCol) {
+    const col = dimDistExpandedCol;
+    const dimsRow = document.createElement('div');
+    dimsRow.className = 'dim-filter-dims-row';
 
-        if (dimDistExpandedL2 === `${col}::${l2label}` || isL2Active) {
-          const l3Set = new Map();
-          batch.rows.filter(r => r[col + '_level2'] === l2label).forEach(r => {
-            const l3 = r[col + '_level3'] || '';
-            l3.split('；').forEach(t => { t = t.trim(); if (t) l3Set.set(t, (l3Set.get(t) || 0) + 1); });
-          });
+    const colGroup = document.createElement('div');
+    colGroup.className = 'dim-col-group';
+
+    // L2 buttons
+    const l2Set = new Map();
+    batch.rows.forEach(r => {
+      const l2 = r[col + '_level2'];
+      if (l2) l2Set.set(l2, (l2Set.get(l2) || 0) + 1);
+    });
+
+    l2Set.forEach((cnt, l2label) => {
+      const isL2Active = dimDistFilter && dimDistFilter.col === col && dimDistFilter.level === 2 && dimDistFilter.label === l2label;
+      const isL2Expanded = dimDistExpandedL2 === `${col}::${l2label}` || isL2Active;
+
+      const l2Row = document.createElement('div');
+      l2Row.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+
+      const l2btn = document.createElement('button');
+      l2btn.className = 'metric-btn metric-btn-l2' + (isL2Active ? ' active' : '');
+      const l2Arrow = document.createElement('span');
+      l2Arrow.className = 'dim-expand-arrow' + (isL2Expanded ? ' open' : '');
+      l2Arrow.textContent = '›';
+      l2btn.appendChild(document.createTextNode(`${l2label} (${cnt})`));
+      l2btn.appendChild(l2Arrow);
+      l2btn.title = `${l2label}，共 ${cnt} 条`;
+      l2btn.onclick = (e) => {
+        e.stopPropagation();
+        dimDistFilter = isL2Active ? null : { level: 2, col, label: l2label };
+        dimDistExpandedL2 = dimDistFilter ? `${col}::${l2label}` : null;
+        renderDimDistFilterBar(batch);
+        renderDimDistChart(batch);
+      };
+      l2Row.appendChild(l2btn);
+
+      // L3 block
+      if (isL2Expanded) {
+        const l3Set = new Map();
+        batch.rows.filter(r => r[col + '_level2'] === l2label).forEach(r => {
+          const l3 = r[col + '_level3'] || '';
+          l3.split('；').forEach(t => { t = t.trim(); if (t) l3Set.set(t, (l3Set.get(t) || 0) + 1); });
+        });
+
+        if (l3Set.size > 0) {
+          const l3Block = document.createElement('div');
+          l3Block.className = 'dim-l3-block';
           l3Set.forEach((cnt3, l3label) => {
             const isL3Active = dimDistFilter && dimDistFilter.col === col && dimDistFilter.level === 3 && dimDistFilter.label === l3label;
             const l3btn = document.createElement('button');
-            l3btn.className = 'metric-btn' + (isL3Active ? ' active' : '');
-            l3btn.textContent = l3label.length > 18 ? l3label.slice(0,18) + '…' : l3label;
+            l3btn.className = 'metric-btn metric-btn-l3' + (isL3Active ? ' active' : '');
+            l3btn.textContent = (l3label.length > 16 ? l3label.slice(0, 16) + '…' : l3label) + ` ×${cnt3}`;
             l3btn.title = `${l3label} (${cnt3}条)`;
-            l3btn.style.cssText = `font-size:10px;padding:2px 6px;${isL3Active ? '' : 'background:#e8f4ff;'}`;
             l3btn.onclick = (e) => {
               e.stopPropagation();
               dimDistFilter = isL3Active ? null : { level: 3, col, label: l3label };
               renderDimDistFilterBar(batch);
               renderDimDistChart(batch);
             };
-            bar.appendChild(l3btn);
+            l3Block.appendChild(l3btn);
           });
+          l2Row.appendChild(l3Block);
         }
-      });
-    }
-  });
+      }
 
-  // Status display
-  if (statusEl) {
-    if (!dimDistFilter) {
-      statusEl.textContent = '';
-    } else {
-      const lvlName = dimDistFilter.level === 1 ? '维度' : dimDistFilter.level === 2 ? '二级' : '三级标签';
-      statusEl.textContent = `筛选：${dimDistFilter.level === 1 ? dimDistFilter.col : dimDistFilter.label}`;
-    }
+      colGroup.appendChild(l2Row);
+    });
+
+    dimsRow.appendChild(colGroup);
+    panel.appendChild(dimsRow);
+  }
+
+  // Status row
+  if (dimDistFilter) {
+    const statusRow = document.createElement('div');
+    statusRow.className = 'dim-filter-status';
+    const lvlName = dimDistFilter.level === 1 ? '一级维度' : dimDistFilter.level === 2 ? '二级维度' : '三级标签';
+    statusRow.textContent = `筛选：${lvlName} · ${dimDistFilter.level === 1 ? dimDistFilter.col : dimDistFilter.label}`;
+    panel.appendChild(statusRow);
+  } else {
+    // empty spacer to keep consistent height
+    const spacer = document.createElement('div');
+    spacer.style.height = '8px';
+    panel.appendChild(spacer);
   }
 }
 
