@@ -2137,20 +2137,36 @@ function trendMiniShowTip(dot, name, val) {
   const tipBg = document.getElementById('trend-mini-tip-bg');
   if (!tip || !tipText || !tipBg) return;
   const label = `${name}  ${val ?? '—'}`;
-  tipText.textContent = label;
-  // Position above dot
   const cx = parseFloat(dot.getAttribute('cx'));
   const cy = parseFloat(dot.getAttribute('cy'));
-  const tw = label.length * 6.5 + 12;
-  const th = 20;
-  const tx = Math.max(2, cx - tw / 2);
-  const ty = cy - th - 6;
-  tipBg.setAttribute('x', tx); tipBg.setAttribute('y', ty);
-  tipBg.setAttribute('width', tw); tipBg.setAttribute('height', th);
+  const th = 22, padX = 10;
+
+  // Set text first, then measure actual rendered width via getBBox
+  tipText.textContent = label;
+  tipText.setAttribute('x', 0);
+  tipText.setAttribute('y', 0);
+  tipText.setAttribute('text-anchor', 'middle');
+  tipText.setAttribute('dominant-baseline', 'middle');
+  tip.setAttribute('opacity', '1');
+
+  // getBBox gives us the real text width after it's in the DOM
+  let tw;
+  try {
+    tw = tipText.getBBox().width + padX * 2;
+  } catch(e) {
+    // fallback if getBBox not available
+    tw = label.length * 7.5 + padX * 2;
+  }
+
+  const tx = Math.max(2, Math.min(cx - tw / 2, 600 - tw - 2));
+  const ty = cy - th - 8;
+
+  tipBg.setAttribute('x', tx);
+  tipBg.setAttribute('y', ty);
+  tipBg.setAttribute('width', tw);
+  tipBg.setAttribute('height', th);
   tipText.setAttribute('x', tx + tw / 2);
   tipText.setAttribute('y', ty + th / 2);
-  tipText.setAttribute('text-anchor', 'middle');
-  tip.setAttribute('opacity', '1');
 }
 function trendMiniHideTip() {
   const tip = document.getElementById('trend-mini-tip');
